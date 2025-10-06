@@ -1,0 +1,801 @@
+--------------------------------------------
+--Drop temporary tables
+IF OBJECT_ID('tempdb..#TEMP_CREDENTIAL') is not null
+DROP TABLE #TEMP_CREDENTIAL
+IF OBJECT_ID('tempdb..#TEMP_SR') is not null
+DROP TABLE #TEMP_SR
+IF OBJECT_ID('tempdb..#TEMP_ACINIT') is not null
+DROP TABLE #TEMP_ACINIT
+IF OBJECT_ID('tempdb..#TEMP_SRDA') is not null
+DROP TABLE #TEMP_SRDA
+IF OBJECT_ID('tempdb..#TEMP_SRDA2') is not null
+DROP TABLE #TEMP_SRDA2
+IF OBJECT_ID('tempdb..#TEMP_INSURED') is not null
+DROP TABLE #TEMP_INSURED
+IF OBJECT_ID('tempdb..#TEMP_BCR') is not null
+DROP TABLE #TEMP_BCR
+IF OBJECT_ID('tempdb..#TEMP_R1') is not null
+DROP TABLE #TEMP_R1
+IF OBJECT_ID('tempdb..#TEMP_SR_INQUERY') is not null
+DROP TABLE #TEMP_SR_INQUERY
+IF OBJECT_ID('tempdb..#TEMP_REGCODE') is not null
+DROP TABLE #TEMP_REGCODE
+--------------------------------------------
+--Alim of temporary tables
+SELECT PublicId, MAX(CredentialSID) as CredentialSID
+INTO #TEMP_CREDENTIAL
+FROM DTW.SCH_DTW_IARD.Usr
+GROUP BY PublicID
+CREATE CLUSTERED INDEX TEMP_CREDENTIAL ON #TEMP_CREDENTIAL
+(
+	PublicId ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+SELECT U.PublicID, C.UserName
+INTO #TEMP_SR
+FROM #TEMP_CREDENTIAL U
+INNER join DTW.SCH_DTW_IARD.credential C
+ON U.CredentialSID = C.CredentialSID 
+AND C.ValidityFlag = '1'  
+CREATE CLUSTERED INDEX TEMP_SR ON #TEMP_SR
+(
+	PublicId ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+SELECT AgreementSID, RANK() OVER(PARTITION BY AgreementSID ORDER BY TechnicalRunID, EffectivePeriodStartDate) AS RANG, PortFolioSID
+INTO #TEMP_ACINIT
+FROM DTW.SCH_DTW_IARD.AgreementCurrent
+CREATE CLUSTERED INDEX TEMP_ACINIT ON #TEMP_ACINIT
+(
+	AgreementSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+SELECT DA.PopulationType, DA.PortfolioSID, DA.ValueLabel
+INTO #TEMP_SRDA
+FROM DTW.SCH_DTW_IARD.DistributorAuth DA
+INNER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim RSTAT 
+ON DA.RDUStatussid = RSTAT.classificationsid
+--AND RSTAT.Obj_Code = '01' Ioliveira 202104V3.4
+WHERE DA.ValidityFlag = '1'  
+AND DA.Perimeter = 1 --Sinistre, Sinistre  
+AND DA.Family = 4 --Sinistre
+AND DA.TypeCode = 9 -- Distributor profile
+CREATE CLUSTERED INDEX TEMP_SRDA ON #TEMP_SRDA
+(
+	PortfolioSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+SELECT DA.PortfolioSID
+INTO #TEMP_SRDA2
+FROM sch_dtw_iard.DistributorAuth DA
+--	INNER JOIN sch_dtw_iard.classification_ref_claim RSTAT 
+--	ON DA.RDUStatussid = RSTAT.classificationsid 
+--	AND RSTAT.obj_code = '01'  LA 202207 V4.2
+WHERE DA.validityflag = '1'  
+AND DA.perimeter = 1 --Sinistre IARD  
+AND DA.family = 4 --Sinistre
+AND DA.typecode = 9 -- Gestion CSE
+AND DA.rightvalue in (999, 998) -- is in CSE management
+CREATE CLUSTERED INDEX TEMP_SRDA2 ON #TEMP_SRDA2
+(
+	PortfolioSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+SELECT CP.ClaimSID, MAX(COALESCE(PC.Name,COALESCE(PE.FirstName,'')+ ' '+ COALESCE(PE.Lastname,''))) as InsuredName
+INTO #TEMP_INSURED
+FROM DTW.SCH_DTW_IARD.claimparty CP
+INNER JOIN DTW.SCH_DTW_IARD.claimpartyrole CPR 
+ON CP.ClaimPartySID = CPR.ClaimPartySID 
+AND CP.ValidityFlag = '1' 
+AND CPR.ValidityFlag = '1'
+AND CPR.RoleSID = 4014
+LEFT JOIN DTW.SCH_DTW_IARD.partycurrent PC 
+ON CP.partysid = PC.PartySID 
+AND PC.ValidityFlag = '1'
+LEFT JOIN DTW.SCH_DTW_IARD.person PE 
+ON CP.partysid = PE.PartySID
+AND PE.ValidityFlag = '1'
+GROUP BY CP.ClaimSID
+CREATE CLUSTERED INDEX TEMP_INSURED ON #TEMP_INSURED
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+SELECT AR.ClaimSID ,MAX(REF.obj_lbll) as BlueCarFaultPercentage
+INTO #TEMP_BCR
+FROM DTW.SCH_DTW_IARD.accidentreport AR
+INNER JOIN DTW.SCH_DTW_IARD.accidentdiagram AD ON AD.AccidentDiagramSID =AR.AccidentDiagramSID and AR.validityflag = '1' and AD.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim REF ON REF.ClassificationSID = AD.BlueCarFaultPercentageSID
+GROUP BY AR.ClaimSID
+CREATE CLUSTERED INDEX TEMP_BCR ON #TEMP_BCR
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+SELECT AgreementSID, MAX(OperationalSection) as OperationalSection
+INTO #TEMP_R1
+FROM DTW.SCH_DTW_IARD.RiskUnit 
+WHERE ValidityFlag='1' 
+AND OperationalSection IS NOT NULL 
+GROUP BY AgreementSID
+CREATE CLUSTERED INDEX TEMP_R1 ON #TEMP_R1
+(
+	AgreementSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+SELECT CP.ClaimSID, MAX(CASE WHEN P1.ClientNumber = '1249117804' 
+THEN '-1' -- pour traiter où ce faux numéro de client est supérieur à un vrai numéro de client
+WHEN P1.ClientNumber IS NULL
+THEN '-2' --pour traiter le cas où pour 1 sinistre/1 assuré, le champ clientnumber n'est pas renseigné
+ELSE P1.ClientNumber END) as ClientNumber
+INTO #TEMP_SR_INQUERY
+FROM DTW.SCH_DTW_IARD.ClaimPartyRole CPR 
+INNER JOIN DTW.SCH_DTW_IARD.classification_ref_claim C14 ON CPR.roleSID = C14.classificationsid AND C14.Cls_id=1000225 AND C14.Obj_id=1
+INNER JOIN DTW.SCH_DTW_IARD.ClaimParty CP ON CPR.claimpartySID = CP.claimpartySID AND CP.validityflag = '1'
+LEFT OUTER JOIN DTW.SCH_DTW_IARD.Party P1 ON CP.partySID = P1.partySID
+WHERE CPR.activeflag = '1'
+AND CPR.validityflag = '1'
+GROUP BY CP.ClaimSID
+CREATE CLUSTERED INDEX TEMP_SR_INQUERY ON #TEMP_SR_INQUERY
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+SELECT AgreementSID, MAX(OperationalSection) as OperationalSection
+INTO #TEMP_REGCODE
+from DTW.SCH_DTW_IARD.RiskUnit
+where Validityflag = '1'
+GROUP BY AgreementSID
+CREATE CLUSTERED INDEX TEMP_REGCODE ON #TEMP_REGCODE
+(
+	AgreementSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+--AB: Begin V5.4
+SELECT DISTINCT 
+S.ClaimSID,
+G.UG AS UGRECOURSSUBIS,
+U.PublicID AS GESTIONNAIRERECOURSSUBIS,
+S.AssignedGroup AS RECOURSSUBISGROUP
+INTO #TEMP_RECOURSUBIS
+FROM DTW.SCH_DTW_IARD.UserRoleAssign S
+LEFT JOIN DTW.SCH_DTW_IARD.Usr U ON U.PublicID = S.AssignedUser AND S.ValidityFlag = '1'
+LEFT JOIN DTW.SCH_DTW_IARD.Grp G ON G.PublicID = S.AssignedGroup AND G.ValidityFlag = '1'
+LEFT JOIN DTW.SCH_DTW_IARD.GroupContact GC ON G.PublicID = GC.GroupID AND GC.ValidityFlag = '1' 
+INNER JOIN DTW.SCH_DTW_IARD.UG UG ON UG.Code = G.UG AND UG.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim REFS ON REFS.ClassificationSID = S.RoleSID AND REFS.OBJ_LBLL = 'Subrogation Received'
+WHERE S.ValidityFlag = '1'
+-- Begin V5.6
+AND S.IsActive = '1'
+-- End V5.6
+CREATE CLUSTERED INDEX TEMP_RECOURSUBIS ON #TEMP_RECOURSUBIS
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+select row_number() over (partition by CC2.claimSID order by CC2.claimSID, CC2.updatetime) as row_num2,  
+	   CC2.claimSID, CC2.updatetime as Dt_reouv
+INTO #TEMP_REOPENDATE
+from sch_dtw_iard.claimcurrent CC2
+LEFT JOIN ( 
+	select row_number() over (partition by CC1.claimSID order by CC1.claimSID, CC1.updatetime, CC1.effectiveperiodstartdate) as row_num,  
+		   CC1.claimSID, CC1.updatetime as updatetime_clos, CC1.effectiveperiodstartdate as EPSD_clos 
+	from sch_dtw_iard.claimcurrent CC1
+	inner join sch_dtw_iard.classification_ref_claim d_st on (d_st.classificationSID=CC1.claimstatusSID and d_st.obj_lbll in ('Clos', 'Clos sans suite'))
+		  ) CL on (CL.claimSID=CC2.claimSID and CL.row_num=1)
+inner join sch_dtw_iard.classification_ref_claim d_st2 on (d_st2.classificationSID=CC2.claimstatusSID and d_st2.obj_lbll='En cours')		       
+where CC2.effectiveperiodstartdate > CL.EPSD_clos
+CREATE CLUSTERED INDEX TEMP_REOPENDATE ON #TEMP_REOPENDATE
+(
+	ClaimSID ASC,
+	row_num2 ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+--AB: End V5.4
+--------------------------------------------
+--Alim of Claim table
+TRUNCATE TABLE DTW.SCH_DTM_IARD.ClaimView_Optim
+INSERT INTO DTW.SCH_DTM_IARD.ClaimView_Optim
+SELECT
+	C1.LegacySource ,
+	R1.OperationalSection ,
+	A2.UV AS UV,
+	C8.FNOLClaimSegment,
+	C1.ClaimNumber,
+	A2.AgreementNumber,
+	PTF.PortfolioNumber, --A3.PortfolioNumber,
+	C1.CreateTime,
+	C1.LossDate,
+	C1.ReportedDate,
+	C8.OpeningDate,
+	--AB: Begin V5.4
+	--C8.ReOpenDate,
+	CASE WHEN C8.CloseDate <= '10-NOV-17' THEN C8.ReOpenDate ELSE Dt_reouv end as ReOpenDate,
+	--AB: End V5.4
+	C8.CloseDate,
+	C8.UGInitial,
+	C8.UGOrigin,
+	C8.UG,
+	SR1.Username as CreateUser,
+	Substring(SR1.Username, 1, 2) AS CalculatedCreateUserType,
+	SR2.Username as OpenUser,
+	Substring(SR2.Username, 1, 2) AS CalculatedOpenUserType,
+	SR3.Username as AssignedUser,
+	Substring(SR3.Username, 1, 2) AS CalculatedAssignedUserType,
+	C8.AssignedGroup,
+	CASE ThirdPartyInvolvedFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS ThirdPartyInvolvedFlag,
+	P11.PostalCode,
+	P11.CITY,
+	P11.PolicyHolderTownCode,
+	C8.RetiredFlag,
+	CASE ClaimTotallyMovedFromDistributorToHQFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS ClaimTotallyMovedFromDistributorToHQFlag,
+	CASE ClaimTotalyMovedFromRabatToHQFranceFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS ClaimTotalyMovedFromRabatToHQFranceFlag,
+	CASE ESCompensationSubmittedFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS ESCompensationSubmittedFlag,
+	CASE GAGCompensationSubmittedFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS GAGCompensationSubmittedFlag,
+	CASE NEGCompensationSubmittedFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS NEGCompensationSubmittedFlag,
+	CASE ESMissionFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS ESMissionFlag,
+	C12.LastGarageMissionTypeCode AS LastGarageMissionTypeCode,
+	CASE ESPaymentFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS ESPaymentFlag,
+	CASE GAGPaymentFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS GAGPaymentFlag,
+	CASE NEGPaymentFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS NEGPaymentFlag,
+	CASE CancelledESMissionFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS CancelledESMissionFlag,
+	C12.LastCancelledGarageMissionTypeCode AS LastCancelledGarageMissionTypeCode,
+	CASE C12.BodyInjuryFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS BodyInjuryFlag,
+	CASE LumpSumOutSubrogationFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS LumpSumOutSubrogationFlag,
+	CASE NoLumpSumOutSubrogationFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS NoLumpSumOutSubrogationFlag,
+	CASE LumpSumInSubrogationFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS LumpSumInSubrogationFlag,
+	CASE NoLumpSumInSubrogationFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS NoLumpSumInSubrogationFlag,
+	CASE ExpertMissionFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS ExpertMissionFlag,
+	CASE MultiManagementFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS MultiManagementFlag,
+	CASE PartialDelegationFlag WHEN 1 THEN 'OUI' WHEN 0 THEN 'NON' ELSE '?' END AS PartialDelegationFlag,
+	C12.FirstPrincipalPaymentDate AS FirstPrincipalPaymentDate,
+	C12.ActivityCount AS ActivityCount,
+	C8.ClaimSID,
+	C1.AgreementSID,
+	C8.HowReportedSID,
+	C8.LossCauseSID,
+	C8.LossCauseDetailSID,
+	P11.PostalAddressSID,
+	C1.TechnicalRunID,
+	C8.LossLocationSID,
+	C1.LossTypeSID,
+	C8.ClaimStatusSID,
+	C8.ManagementTypeSID,
+	A2.AgreementTypeSID,
+	C8.ManifestationDate,
+	UV.UVFamilySID,
+	COALESCE(G1NAME.value,G1.name) as AssignedGroupName,
+	CASE WHEN SR.ClientNumber NOT IN ('-1','-2') THEN SR.ClientNumber ELSE CASE WHEN SR.ClientNumber = '-1' THEN '1249117804' END END AS ClientNumber,
+	C1.ClaimTypeSID,
+	C1.IsConvertedFromAXAPACFlag,
+	C1.AXAPACMigrationDate,
+	A2.SubscriptionAxaName,
+	CASE WHEN C1.previousClaimNumber IS NOT NULL THEN 1 ELSE 0 END as AXAPACClaimReopenedFlag,
+       C1.PreviousClaimNumber,
+       CASE WHEN CI.archivestatesid IS NOT NULL THEN 1 ELSE 0 END as ArchivedClaimFlag,
+       C8.AssignedSubrogationGroup,
+       SRCC.username,
+       C8.UgSubrogation,
+       C8.Description,
+BCR.BlueCarFaultPercentage,
+REFINSUR.Obj_Lbll as InsuredRCRate,
+REFCONVCL.Obj_Lbll as ConventionalClaim,
+--BIRD 2.13
+--REPLACE(REPLACE(ISNULL(PA.addressline1,' ')+' '+ISNULL(PA.AddressLine2,' ')+' '+ISNULL(PA.addressline3,' ')+' '+ISNULL(PA.addressline4,' ')+', '+PA.postalcode+' '+PA.City,'  ',' '),' ,',','),
+LTRIM(RTRIM(
+REPLACE(
+	REPLACE(ISNULL(PA.addressline1,' ')+' '+
+			ISNULL(PA.AddressLine2,' ')+' '+
+			ISNULL(PA.addressline3,' ')+' '+
+			ISNULL(PA.addressline4,' ')+' '+
+			PA.postalcode+' '+
+			PA.City,
+	',',''),
+'  ',''))) as LossLocationAddress,
+PTF2.PortfolioNumber as InitialPortfolioNumber,
+CASE WHEN SRDA.Populationtype IN ('AG','AV') THEN 'Agent'
+	 WHEN SRDA.PopulationType = 'CO'
+	 THEN 'Courtier'
+	 WHEN SRDA.PopulationType = 'SA'
+	 THEN 'Réseau Salarié'
+	  END as DistributorChannel,
+CASE WHEN SRDA2.portfoliosid IS NOT NULL THEN 'Non Délégataire'
+        WHEN SRDA.ValueLabel IS NULL THEN ''
+         ELSE 'Délégataire'
+         END as Delegate,
+SRDA.ValueLabel as Delegationlevel,
+C17.Obj_lbll as CustomerRelationship,
+INSURED.insuredname,
+-- BEGIN Ioliveira 202103V3.3
+CASE WHEN REGCODE.OperationalSection IN ('PP')
+     THEN COALESCE(IIP.Region,CIPF.Region)
+	 WHEN REGCODE.OperationalSection IN ('EN')
+	 THEN COALESCE(CIPF.Region, IIP.Region)
+	 WHEN REGCODE.OperationalSection is null and COALESCE(IIP.Region,CIPF.Region) is null
+	 THEN '00'
+	 ELSE COALESCE(IIP.Region,CIPF.Region)
+	 END as RegionPTF,
+-- END Ioliveira 202103V3.3
+-- BEGIN srico 202207V4.2
+	VPC.ISIRCAConventionFlag,
+-- END srico 202207V4.2
+--AB: Begin V5.4
+RECOURSUBIS.UgRecoursSubis,
+RECOURSUBIS.GestionnaireRecoursSubis,
+RECOURSUBIS.RecoursSubisGroup
+--AB: End V5.4
+FROM
+	DTW.SCH_DTW_IARD.Claim C1  
+	INNER JOIN DTW.SCH_DTW_IARD.ClaimCurrent C8  
+		ON C8.ClaimSID = C1.ClaimSID 
+		AND C8.ValidityFlag= '1'
+	INNER JOIN DTW.SCH_DTW_IARD.ClaimFlag C12 
+		ON C8.ClaimSID = C12.ClaimSID 
+		AND C12.ValidityFlag= '1'
+/* BIRD v2.12.2 Change join ClaimCurrent Agreement */
+	LEFT OUTER JOIN DTW.SCH_DTW_IARD.Agreement A2 
+		ON COALESCE(C8.AgreementSID, C1.AgreementSID) = A2.AgreementSID
+        AND A2.UnattachedFlag = '0'
+	LEFT OUTER JOIN #TEMP_R1 R1
+	ON A2.AgreementSID=R1.AgreementSID 
+	LEFT OUTER JOIN DTW.SCH_DTW_IARD.AgreementCurrent A3 
+		ON A3.AgreementSID = A2.AgreementSID 
+		AND A3.ValidityFlag='1'
+	LEFT OUTER JOIN DTW.SCH_DTW_IARD.UV UV 
+		ON UV.UVSID = A2.UVSID
+	LEFT OUTER JOIN DTW.SCH_DTW_IARD.PostalAddress P11 
+		ON C8.LossLocationSID = P11.PostalAddressSID 
+		AND p11.validityflag= '1'
+	LEFT OUTER JOIN DTW.SCH_DTW_IARD.Grp G1 
+		ON C8.AssignedGroup = G1.PublicID 
+		AND G1.ValidityFlag= '1'
+	LEFT OUTER JOIN #TEMP_SR_INQUERY SR 
+		ON C1.claimSID = SR.claimsid
+			
+	LEFT OUTER JOIN DTW.SCH_DTW_IARD.MigratedClaim M
+		ON C1.ClaimSID=M.ClaimSID_Old
+		
+	LEFT OUTER JOIN #TEMP_SR SR1
+		ON C1.CreateUser = SR1.PublicID
+		
+	LEFT OUTER JOIN #TEMP_SR SR2
+		ON C8.OpenUser = SR2.PublicID
+	LEFT OUTER JOIN #TEMP_SR SR3
+		ON C8.AssignedUser = SR3.PublicID
+       LEFT OUTER JOIN DTW.SCH_DTW_IARD.ClaimInfo CI
+		ON C1.ClaimNumber = CI.Claimnumber
+		AND CI.ValidityFlag = '1'
+       LEFT OUTER JOIN #TEMP_SR SRCC
+              ON C8.AssignedSubrogationUser = SRCC.publicid
+       LEFT OUTER JOIN DTW.SCH_DTW_IARD.PostalAddress PA
+               ON C8.losslocationsid = PA.postaladdresssid 
+		   AND PA.validityflag = '1'
+		
+		LEFT OUTER JOIN DTW.SCH_DTW_IARD.ClaimAutoCurrent CAC
+		ON C1.ClaimSID = CAC.ClaimSID 
+		AND CAC.validityflag = '1'
+		
+		LEFT OUTER JOIN DTW.SCH_DTW_IARD.ClaimautoX CX
+		ON CAC.claimautosid = CX.claimautosid 
+		AND CX.validityflag = '1'
+		
+		LEFT OUTER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim REFINSUR
+		ON CX.insuredRCRateSID = REFINSUR.classificationsid
+		
+		LEFT OUTER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim REFCONVCL
+		ON CX.conventionalclaimSID = REFCONVCL.classificationsid
+LEFT OUTER JOIN DTW.SCH_DTW_IARD.Portfolio PTF
+ON A3.PortfolioSID = PTF.PortfolioSID
+AND PTF.ValidityFlag = '1'
+LEFT OUTER JOIN #TEMP_ACINIT ACINIT
+ON A2.AgreementSID = ACINIT.AgreementSID
+AND ACINIT.RANG = 1
+LEFT OUTER JOIN DTW.SCH_DTW_IARD.Portfolio PTF2
+ON ACINIT.PortfolioSID = PTF2.PortFolioSID
+AND PTF2.ValidityFlag = '1'
+LEFT OUTER JOIN #TEMP_SRDA SRDA
+ON PTF.PortfolioSID = SRDA.PortfolioSID
+LEFT OUTER JOIN #TEMP_SRDA2 SRDA2
+ON PTF.PortfolioSID = SRDA2.PortfolioSID
+LEFT OUTER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim C17
+ON C8.CustomerRelationshipSID = C17.ClassificationSID
+LEFT OUTER JOIN DTW.SCH_DTW_IARD.GroupNameL10N G1Name
+ON G1.groupSID=G1NAME.ownerSID 
+AND G1NAME.ValidityFlag = '1'
+LEFT OUTER JOIN #TEMP_INSURED INSURED
+ON C1.ClaimSID = INSURED.ClaimSID
+LEFT OUTER JOIN #TEMP_BCR BCR
+ON C1.ClaimSID = BCR.ClaimSID
+-- BEGIN Ioliveira 202103V3.3
+LEFT OUTER JOIN #TEMP_REGCODE REGCODE
+ON A2.AgreementSID = REGCODE.AgreementSID		
+LEFT JOIN DTW.SCH_DTW_IARD.CorporInsurPortfolio CIPF
+ON CIPF.CorporInsurPortfolioSID = PTF.CorporInsurPortfolioSID and CIPF.validityflag = '1' 
+LEFT JOIN DTW.SCH_DTW_IARD.IndivInsurPortfolio IIP
+ON IIP.IndivInsurPortfolioSID = PTF.IndivInsurPortfolioSID and IIP.validityflag = '1'
+-- END Ioliveira 202103V3.3
+-- BEGIN srico 202207V4.2
+LEFT JOIN DTW.SCH_DTW_IARD.VPClaim VPC 
+ON VPC.ClaimSID = C1.ClaimSID and VPC.validityflag = '1' 
+-- END srico 202207V4.2
+--AB: Begin V5.4
+LEFT JOIN #TEMP_RECOURSUBIS RECOURSUBIS
+ON C1.ClaimSID = RECOURSUBIS.ClaimSID
+LEFT JOIN #TEMP_REOPENDATE REOPENDATE
+ON REOPENDATE.ClaimSID=C1.ClaimSID
+AND REOPENDATE.row_num2=1
+--AB: End V5.4
+WHERE
+	M.ClaimSID_Old IS NULL
+
+
+
+	
+---------------------------------------
+------Claim Amounts
+---------------------------------------
+IF OBJECT_ID('tempdb..#TEMP_RES_PROV_RESTANTE') is not null
+DROP TABLE #TEMP_RES_PROV_RESTANTE
+IF OBJECT_ID('tempdb..#TEMP_PROV_RESTANTE') is not null
+DROP TABLE #TEMP_PROV_RESTANTE
+IF OBJECT_ID('tempdb..#TEMP_RES_MT_REGLE') is not null
+DROP TABLE #TEMP_RES_MT_REGLE
+IF OBJECT_ID('tempdb..#TEMP_MT_REGLE') is not null
+DROP TABLE #TEMP_MT_REGLE
+IF OBJECT_ID('tempdb..#TEMP_TOTAL_MT_REGLE_COASS') is not null
+DROP TABLE #TEMP_TOTAL_MT_REGLE_COASS
+IF OBJECT_ID('tempdb..#TEMP_MT_REGLE_COASS') is not null
+DROP TABLE #TEMP_MT_REGLE_COASS
+IF OBJECT_ID('tempdb..#TEMP_PROV_ENC_RESTANTE') is not null
+DROP TABLE #TEMP_PROV_ENC_RESTANTE
+IF OBJECT_ID('tempdb..#TEMP_TOTAL_ENC_COASS') is not null
+DROP TABLE #TEMP_TOTAL_ENC_COASS
+IF OBJECT_ID('tempdb..#TEMP_ENC_COASS') is not null
+DROP TABLE #TEMP_ENC_COASS
+IF OBJECT_ID('tempdb..#TEMP_ENC') is not null
+DROP TABLE #TEMP_ENC
+IF OBJECT_ID('tempdb..#TEMP_TRANS') is not null
+DROP TABLE #TEMP_TRANS
+-- V6.2 20250226 begin cs add new temporary table #TEMP_RATIO
+IF OBJECT_ID('tempdb..#TEMP_RATIO') is not null
+DROP TABLE #TEMP_RATIO
+-- V6.2 20250226 end cs add new temporary table #TEMP_RATIO 
+
+-- V6.2 20250226 begin cs create temporary table RATIO 
+SELECT 
+claim.ClaimSID,
+		claim.claimnumber as claimnumber,
+		case
+		when (coins.AgreementSID = policy.AgreementSID
+		and policy.AgreementLeaderFlag= 1
+		and coinsplan.IsLeaderFlag = 1
+		and (Select count(*) from DTW.SCH_DTW_IARD.Claim claimbis
+		left join DTW.SCH_DTW_IARD.ClaimExposure exposure on claimbis.ClaimSID = exposure.ClaimSID
+		left join DTW.SCH_DTW_IARD.Damage incident on incident.DamageSID = exposure.DamageSID
+		join  DTW.SCH_DTW_IARD.Classification_Ref_Claim intype on  incident.SubtypeSID = intype.ClassificationSID
+		where  intype.Obj_Code = 'InjuryIncident' 
+		and claimbis.ClaimSID = claim.ClaimSID)>0
+		)then 1
+		else 0
+		end as coinsure,
+		coinsplan.CoInsuranceRate as ratio
+		INTO #TEMP_RATIO
+		from DTW.SCH_DTW_IARD.claim claim 
+		join DTW.SCH_DTW_IARD.Agreement policy on claim.AgreementSID= policy.AgreementSID
+		-- V6.3 20250319 begin cs add validity flag
+		left join DTW.SCH_DTW_IARD.CoInsurancePlan coins on coins.AgreementSID = policy.AgreementSID and coins.ValidityFlag=1
+		left join DTW.SCH_DTW_IARD.CoInsurancePlanInsurer coinsplan on coins.CoInsurancePlanSID= coinsplan.CoInsurancePlanSID and coinsplan.IsLeaderFlag = 1 and coinsplan.ValidityFlag=1
+		-- V6.3 20250319 end cs add validity flag
+
+CREATE CLUSTERED INDEX TEMP_RATIO ON #TEMP_RATIO
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+-- V6.2 20250226 end cs create temporary table RATIO 
+
+
+SELECT CT.claimsid
+,CASE WHEN ST.obj_code = 'Reserve' 
+THEN SUM( CTL.ClaimAmount)
+ELSE -SUM( CTL.ClaimAmount)
+END Total
+INTO #TEMP_RES_PROV_RESTANTE
+FROM DTW.SCH_DTW_IARD.claimtransaction CT
+INNER JOIN DTW.SCH_DTW_IARD.classification_ref_claim ST on ST.classificationsid = CT.Subtypesid AND ST.Obj_Code IN ('Payment','Reserve') AND CT.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.transactionset TS ON TS.transactionsetSID=CT.TransactionSetSID AND TS.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.claimtransactionline CTL ON CT.claimtransactionSID =CTL.claimtransactionSID AND CTL.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccounttransaction TAT ON TAT.claimtransactionSID = CT.claimtransactionSID AND TAT.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccountlineitem TALI ON TALI.taccounttransactionSID = TAT.taccounttransactionSID AND TALI.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccount TA ON TA.taccountSID=TALI.TAccountSID  AND TA.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim taccount_2 ON TA.TAccountTypeSID = taccount_2.ClassificationSID AND taccount_2.obj_id  IN (1, 6, 10, 20, 23 )
+GROUP BY CT.claimSID,ST.obj_code
+
+CREATE CLUSTERED INDEX TEMP_RES_PROV_RESTANTE ON #TEMP_RES_PROV_RESTANTE
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+
+SELECT RES.claimsid ClaimSID,
+-- V6.2 20250226 begin cs add ratio in the calculatios
+case
+when SUM(RES.Total) = 0 then 0
+when Ratio.coinsure = 1
+then (SUM(RES.Total) * Ratio.ratio)/100  
+else SUM(RES.Total) 
+end as Provision_restantes
+--V6.2 20250226 end cs add ratio in the calculatios
+INTO #TEMP_PROV_RESTANTE
+FROM #TEMP_RES_PROV_RESTANTE RES
+--V6.2 20250226 Begin cs add ratio
+join #TEMP_RATIO Ratio on Ratio.ClaimSID = RES.ClaimSID
+GROUP BY RES.claimsid,Ratio.coinsure,Ratio.ratio
+--V6.2 20250226 end cs add ratio
+
+CREATE CLUSTERED INDEX TEMP_PROV_RESTANTE ON #TEMP_PROV_RESTANTE
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+
+SELECT CT.claimsid
+,CASE WHEN (LC.obj_code not in ('other_fees_ext','expert_fees_ext','judicary_fees_ext','lawyer_fees_ext','other_provider_fees_ext','fees_ext','CourtCosts','uncovered_investigations_ext','adjustment_coass_fees_ext','darva_fees_ext') OR Lc.Obj_Code IS NULL) 
+THEN CTL.ClaimAmount                            
+END total_principal
+,CASE WHEN LC.obj_code in ('other_fees_ext','expert_fees_ext','judicary_fees_ext','lawyer_fees_ext','other_provider_fees_ext','fees_ext','CourtCosts','uncovered_investigations_ext','adjustment_coass_fees_ext','darva_fees_ext')
+then CTL.ClaimAmount  
+end total_frais
+INTO #TEMP_RES_MT_REGLE
+FROM DTW.SCH_DTW_IARD.claimtransaction CT
+INNER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim ST ON CT.SubtypeSID = ST.ClassificationSID AND ST.obj_code = 'Payment' AND CT.validityflag = '1'               
+INNER JOIN DTW.SCH_DTW_IARD.transactionset TS ON TS.transactionsetSID=CT.TransactionSetSID AND TS.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.claimtransactionline CTL ON CT.claimtransactionSID =CTL.claimtransactionSID AND CTL.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccounttransaction TAT ON TAT.claimtransactionSID = CT.claimtransactionSID AND TAT.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccountlineitem TALI ON TALI.TAccountTransactionSID = TAT.taccounttransactionSID AND TALI.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccount TA ON TA.taccountSID=TALI.TAccountSID AND TA.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim taccount_2 ON TA.TAccountTypeSID = taccount_2.ClassificationSID AND taccount_2.Obj_Id  IN (4,18)
+LEFT OUTER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim LC ON CTL.LineCategorySID = LC.ClassificationSID
+CREATE CLUSTERED INDEX TEMP_RES_MT_REGLE ON #TEMP_RES_MT_REGLE
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+
+SELECT RES.ClaimSID
+--V6.2 20250226 Begin cs add ratio
+--V6.4 20250605 Begin cs modification on calculation
+--,((SUM(RES.total_principal) * Ratio.ratio)/100) as paiement_en_principal
+,case when Ratio.coinsure = 1 AND Ratio.ratio IS NOT NULL
+  then ((SUM(RES.total_principal) * Ratio.ratio)/100)
+  else SUM(RES.total_principal)
+  end as paiement_en_principal
+--,((SUM(RES.total_frais)* Ratio.ratio)/100) as frais_payes
+,case when Ratio.coinsure = 1 AND Ratio.ratio IS NOT NULL
+  then ((SUM(RES.total_frais) * Ratio.ratio)/100)
+  else SUM(RES.total_frais)
+  end as frais_payes
+--V6.4 20250605 End cs modification on calculation
+--V6.2 20250226 End cs add ratio
+INTO #TEMP_MT_REGLE
+FROM #TEMP_RES_MT_REGLE RES
+--V6.2 20250226 Begin cs add ratio
+JOIN #TEMP_RATIO ratio on Ratio.ClaimSID = RES.ClaimSID 
+group by RES.claimsid,Ratio.coinsure,Ratio.ratio
+--V6.2 20250226 End cs add ratio
+CREATE CLUSTERED INDEX TEMP_MT_REGLE ON #TEMP_MT_REGLE
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+SELECT c.ClaimSID
+,case when po.AgreementLeaderFlag = '1' and cop.CoInsurancePlanID is not null
+  then 'OUI'
+  else 'NON'
+end Is_CoInsuranceLeader
+, cits.shareAmount
+,case when transactionlineitem_0.claimtransactionsid IS NOT NULL then 1 ELSE 0 END feesflag
+INTO #TEMP_TOTAL_MT_REGLE_COASS
+from DTW.SCH_DTW_IARD.claimtransaction tra
+--INNER JOIN DTW.SCH_DTW_IARD.classification_ref_claim trt on trt.ClassificationSID = tra.SubtypeSID and trt.Obj_Code = 'Recovery' BEGIN IOLIVEIRA 202104V3.4
+INNER JOIN DTW.SCH_DTW_IARD.classification_ref_claim trt on trt.ClassificationSID = tra.SubtypeSID and trt.Obj_Code = 'Payment' --END IOLIVEIRA 202104V3.4
+INNER JOIN DTW.SCH_DTW_IARD.classification_ref_claim trs on trs.ClassificationSID = tra.StatusSID and trs.Obj_Code <> 'rejected'
+INNER JOIN DTW.SCH_DTW_IARD.claim c on tra.ClaimSID = c.ClaimSID AND tra.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.claimcurrent cl on cl.ClaimSID = c.ClaimSID AND cl.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.agreement po on po.AgreementSID = COALESCE(cl.AgreementSID,c.agreementsid)
+INNER JOIN DTW.SCH_DTW_IARD.CoInsurancePlan cop on cop.AgreementSID = po.AgreementSID AND cop.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.CoInsurancePlanInsurer cpi on cpi.CoInsurancePlansid = cop.CoInsurancePlanSID and cpi.IsLeaderFlag = '1' AND cpi.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.CoInsTransactionShare cits on cits.claimtransactionsid = tra.claimtransactionsid and cits.coinsuranceplaninsurersid = cpi.CoInsurancePlanInsurerSID and cits.validityflag = '1'
+left outer JOIN (SELECT tli.claimtransactionsid
+FROM DTW.SCH_DTW_IARD.claimtransactionline tli
+inner join DTW.SCH_DTW_IARD.Classification_Ref_Claim lc on lc.ClassificationSID = tli.LineCategorySID AND tli.validityflag = '1' and tli.claimamount <> 0  AND LC.obj_code in ('other_fees_ext','expert_fees_ext','judicary_fees_ext','lawyer_fees_ext','other_provider_fees_ext','fees_ext','CourtCosts','uncovered_investigations_ext','adjustment_coass_fees_ext','darva_fees_ext')
+group by tli.claimtransactionsid) transactionlineitem_0 ON cits.claimTRANSACTIONSID =transactionlineitem_0.claimtransactionsid 
+CREATE CLUSTERED INDEX TEMP_TOTAL_MT_REGLE_COASS ON #TEMP_TOTAL_MT_REGLE_COASS
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+select TOTAL.ClaimSID, 
+sum(case when TOTAL.feesflag = 0 then TOTAL.shareAmount
+end) paiement_principal_Coass
+,sum(case when TOTAL.feesflag = 1 then TOTAL.shareAmount
+end) frais_Coass
+INTO #TEMP_MT_REGLE_COASS
+from #TEMP_TOTAL_MT_REGLE_COASS TOTAL
+WHERE TOTAL.Is_CoInsuranceLeader = 'OUI'
+group by TOTAL.claimsid
+CREATE CLUSTERED INDEX TEMP_MT_REGLE_COASS ON #TEMP_MT_REGLE_COASS
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+SELECT
+qRoot.ClaimSID  
+,SUM (CASE WHEN tty.obj_code = 'recoveryreserves'
+THEN transactionlineitem_4.ClaimAmount
+ELSE -1*transactionlineitem_4.ClaimAmount END) provision_encaissement_restant  
+INTO #TEMP_PROV_ENC_RESTANTE
+FROM DTW.SCH_DTW_IARD.ClaimTransaction qRoot
+INNER JOIN DTW.SCH_DTW_IARD.classification_ref_claim trt on trt.ClassificationSID = qRoot.SubtypeSID and trt.Obj_Code in ('Recovery','RecoveryReserve') AND qRoot.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.claimtransactionline transactionlineitem_4 ON qRoot.ClaimTransactionSID= transactionlineitem_4.claimTransactionSID AND transactionlineitem_4.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccounttransaction qRoots6 ON qRoots6.claimTransactionSID = qRoot.ClaimTransactionSID AND qRoots6.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccountlineitem qRoots7 ON qRoots7.taccounttransactionSID = qRoots6.taccounttransactionSID AND qRoots7.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccount taccount_8 ON taccount_8.taccountSID=qRoots7.TAccountSID AND taccount_8.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.classification_ref_claim tty on tty.ClassificationSID=taccount_8.TAccountTypeSID AND tty.Obj_Code in ('recoveries', 'recoveryreserves')
+GROUP BY qRoot.ClaimSID
+CREATE CLUSTERED INDEX TEMP_PROV_ENC_RESTANTE ON #TEMP_PROV_ENC_RESTANTE
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+select c.claimSID,
+case when po.AgreementLeaderFlag = '1' and cop.CoInsurancePlanID is not null
+  then 'OUI'
+  else 'NON'
+end Is_CoInsuranceLeader
+, cits.shareAmount
+INTO #TEMP_TOTAL_ENC_COASS
+from DTW.SCH_DTW_IARD.claimtransaction tra
+     INNER JOIN DTW.SCH_DTW_IARD.classification_ref_claim trt on trt.ClassificationSID = tra.SubtypeSID and trt.Obj_Code = 'Recovery'
+     INNER JOIN DTW.SCH_DTW_IARD.claim c on tra.ClaimSID = c.ClaimSID AND tra.ValidityFlag = '1'
+     INNER JOIN DTW.SCH_DTW_IARD.claimcurrent cl on cl.ClaimSID = c.ClaimSID AND cl.ValidityFlag = '1'
+     INNER JOIN DTW.SCH_DTW_IARD.agreement po on po.AgreementSID = COALESCE(cl.AgreementSID,c.agreementsid)
+     INNER JOIN DTW.SCH_DTW_IARD.CoInsurancePlan cop on cop.AgreementSID = po.AgreementSID AND cop.ValidityFlag = '1'
+     INNER join DTW.SCH_DTW_IARD.CoInsurancePlanInsurer cpi on cpi.CoInsurancePlansid = cop.CoInsurancePlanSID and cpi.IsLeaderFlag = '1' AND cpi.ValidityFlag = '1'
+     INNER JOIN DTW.SCH_DTW_IARD.CoInsTransactionShare cits on cits.claimtransactionsid = tra.claimtransactionsid and cits.coinsuranceplaninsurersid = cpi.CoInsurancePlanInsurerSID and cits.validityflag = '1'
+CREATE CLUSTERED INDEX TEMP_TOTAL_ENC_COASS ON #TEMP_TOTAL_ENC_COASS
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+
+select TOTAL.claimSID, 
+sum(TOTAL.shareAmount) Encaissement_Coass
+INTO #TEMP_ENC_COASS
+from #TEMP_TOTAL_ENC_COASS TOTAL
+WHERE TOTAL.Is_CoInsuranceLeader = 'OUI'
+group by TOTAL.claimsid
+CREATE CLUSTERED INDEX TEMP_ENC_COASS ON #TEMP_ENC_COASS
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+
+SELECT
+qRoot.ClaimSID  
+,SUM (transactionlineitem_4.ClaimAmount) encaissement  
+INTO #TEMP_ENC
+FROM DTW.SCH_DTW_IARD.ClaimTransaction qRoot
+INNER JOIN DTW.SCH_DTW_IARD.classification_ref_claim trt on trt.ClassificationSID = qRoot.SubtypeSID and trt.Obj_Code = 'Recovery' AND qRoot.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.claimtransactionline transactionlineitem_4 ON qRoot.ClaimTransactionSID= transactionlineitem_4.claimTransactionSID AND transactionlineitem_4.ValidityFlag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccounttransaction qRoots6 ON qRoots6.claimTransactionSID = qRoot.ClaimTransactionSID
+INNER JOIN DTW.SCH_DTW_IARD.taccountlineitem qRoots7 ON qRoots7.taccounttransactionSID = qRoots6.taccounttransactionSID AND qRoots7.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.taccount taccount_8 ON taccount_8.taccountSID=qRoots7.TAccountSID AND taccount_8.validityflag = '1'
+INNER JOIN DTW.SCH_DTW_IARD.classification_ref_claim tty on tty.ClassificationSID=taccount_8.TAccountTypeSID AND tty.Obj_Code = 'cashin'
+GROUP BY qRoot.ClaimSID
+CREATE CLUSTERED INDEX TEMP_ENC ON #TEMP_ENC
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+
+SELECT CT.ClaimSID
+--V6.2 20250226 Begin cs delete case CIP.validityflag IS NOT NULL and add ratio                    
+,Ratio.ratio as CoinsuranceRate,
+Ratio.coinsure  
+ --V6.2 20250226 end cs delete case CIP.validityflag IS NOT NULL and add ratio                        
+                ,SUM(CASE WHEN ST.Obj_Code = 'Payment' AND (LC.obj_code not in ('other_fees_ext','expert_fees_ext','judicary_fees_ext','lawyer_fees_ext','other_provider_fees_ext','fees_ext','CourtCosts','uncovered_investigations_ext','adjustment_coass_fees_ext','darva_fees_ext') OR Lc.Obj_Code IS NULL) THEN CTL.claimamount ELSE 0 END) PrincipalPaymentclaimamount                            
+                ,SUM(CASE WHEN ST.Obj_Code = 'Payment' AND Lc.Obj_Code in  ('other_fees_ext','expert_fees_ext','judicary_fees_ext','lawyer_fees_ext','other_provider_fees_ext','fees_ext','CourtCosts','uncovered_investigations_ext','adjustment_coass_fees_ext','darva_fees_ext') THEN CTL.claimamount ELSE 0 END) FeesPaymentClaimamount                           
+                ,SUM(CASE WHEN ST.Obj_Code = 'Payment' THEN CTL.claimamount ELSE 0 END) Paymentclaimamount                             
+                ,SUM(CASE WHEN ST.Obj_Code = 'Reserve' THEN CTL.claimamount ELSE 0 END) Reserveclaimamount                      
+                ,SUM(CASE WHEN ST.Obj_Code = 'Recovery' THEN CTL.claimamount ELSE 0 END) Recoveryclaimamount                     
+                ,SUM(CASE WHEN ST.Obj_Code = 'RecoveryReserve' THEN CTL.claimamount ELSE 0 END) RecoveryReserveclaimamount                       
+                ,SUM(CASE WHEN ST.Obj_Code = 'Transaction' THEN CTL.claimamount ELSE 0 END) Transactionclaimamount                         
+				INTO #TEMP_TRANS
+       FROM DTW.SCH_DTW_IARD.claimtransaction CT
+                     INNER JOIN DTW.SCH_DTW_IARD.claimtransactionline CTL ON CT.ClaimTransactionSID = CTL.ClaimTransactionSID AND CT.ValidityFlag = '1' ANd CTL.ValidityFlag = '1'      
+                        INNER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim ST ON CT.SubtypeSID = ST.ClassificationSID              
+                        INNER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim TSTAT ON CT.StatusSID = TSTAT.ClassificationSID AND TSTAT.obj_code not in ('draft','pendingapproval','denied','recoded','pendingrecode','rejected','stopped','transferred','voided')                     
+                        LEFT JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim LC ON CTL.LineCategorySID = LC.ClassificationSID                   
+                        INNER JOIN DTW.SCH_DTW_IARD.claim C ON CT.claimsid = C.claimsid
+                        INNER JOIN DTW.SCH_DTW_IARD.claimcurrent CC ON C.claimsid = CC.claimsid ANd CC.validityflag = '1'              
+						 ----V6.2 20250226 begin cs add ratio
+						INNER join #TEMP_RATIO ratio on Ratio.ClaimSID = C.ClaimSID	
+						----V6.2 20250226 End cs add ratio
+				-- Begin V5.6 replace inner by left 'claiminfo'	
+                        LEFT JOIN DTW.SCH_DTW_IARD.claiminfo CI ON C.ClaimNumber = CI.Claimnumber AND CI.ValidityFlag = '1' AND CI.archivestatesid IS NOT NULL
+			-- End V5.6
+                        LEFT JOIN DTW.SCH_DTW_IARD.CoInsurancePlan CIP ON COALESCE(CC.agreementSID,C.agreementSID) = CIP.agreementSID and CIP.validityflag = '1'                   
+                  LEFT JOIN DTW.SCH_DTW_IARD.CoInsurancePlaninsurer CIPI ON CIP.coinsuranceplanSID = CIPI.coinsuranceplanSID and CIPI.IsLeaderFlag = '1' and CIPI.validityflag = '1'                                               
+                  LEFT JOIN DTW.SCH_DTW_IARD.Partycurrent PC ON CIPI.partySID = PC.PartySID and PC.name like '%AXA%' AND PC.validityflag = '1'                            
+          --V6.2 20250226 begin cs add ratio
+		 GROUP BY CT.claimsid ,Ratio.coinsure,Ratio.ratio     
+			--V6.2 20250226 End cs add ratio		 
+         ,(CASE WHEN CIP.validityflag IS NOT NULL                                 
+                    THEN CASE WHEN CIPI.validityflag IS NOT NULL                                   
+                              THEN CASE WHEN CIPI.coinsurancerate IS NOT NULL                              
+                                        THEN CASE WHEN PC.name IS NOT NULL                               
+                                                  THEN CIPI.CoInsuranceRate/100                               
+                                                  ELSE 1                                 
+                                                   END                            
+                                        ELSE 1                              
+                                         END                                
+                              ELSE 1                                 
+                               END                                   
+                    ELSE 1                       
+                     END)
+CREATE CLUSTERED INDEX TEMP_TRANS ON #TEMP_TRANS
+(
+	ClaimSID ASC
+)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+
+
+TRUNCATE TABLE DTW.SCH_DTM_IARD.ClaimView_Amounts_Optim
+INSERT INTO DTW.SCH_DTM_IARD.ClaimView_Amounts_Optim
+SELECT C1.ClaimNumber
+      ,C1.ClaimSID
+         ,ISNULL(CASE WHEN C7.obj_code = 'incident_report' 
+                      THEN 0
+	              -- Begin V5.6 Added * CoinsuranceRate	
+				  --V6.2 20250226 Begin cs add ratio
+			       ELSE PROV_RESTANTE.Provision_restantes
+		               END,ISNULL(CASE WHEN (TRANS.Reserveclaimamount - TRANS.Paymentclaimamount)<0 THEN 0 
+					   ELSE (TRANS.Reserveclaimamount - TRANS.Paymentclaimamount) END,0)) AS RemainingProvisionalAmount
+		      -- End V5.6 and V6.2 20250226 End cs add ratio
+      ,ISNULL(CASE WHEN C7.obj_code = 'incident_report' 
+                      THEN 0 
+                               ELSE ISNULL(CASE WHEN MT_REGLE_COASS.claimsid IS not null 
+                                                THEN MT_REGLE_COASS.paiement_principal_Coass 
+                                                          ELSE MT_REGLE.paiement_en_principal 
+                                                           END
+                                                    ,TRANS.PrincipalPaymentclaimamount*TRANS.CoinsuranceRate)
+                                END,0) AS PrincipalPaymentAmount
+      ,ISNULL(CASE WHEN C7.obj_code = 'incident_report' 
+                      THEN 0 
+                               ELSE ISNULL(CASE WHEN MT_REGLE_COASS.claimsid IS not null 
+                                                THEN MT_REGLE_COASS.frais_Coass 
+                                                          ELSE MT_REGLE.frais_payes 
+                                                           END 
+                                                    ,TRANS.FeesPaymentClaimamount*TRANS.CoinsuranceRate)                                                           
+                                END,0) AS PaidFee
+         ,NULL AS TotalGrossCharge
+		 -- V6.2 20250226 Begin cs add ratio
+         
+         ,ISNULL(CASE WHEN C7.obj_code = 'incident_report' 
+                      THEN 0 
+                               ELSE  PROV_ENC_RESTANTE.provision_encaissement_restant 
+                                END,ISNULL(TRANS.RecoveryReserveclaimamount-TRANS.Recoveryclaimamount,0)) AS RemainingCashProvisionalAmount -- RemainingCashProvisionalAmount
+      ,ISNULL(CASE WHEN C7.obj_code = 'incident_report' 
+                   THEN 0 
+                   ELSE ISNULL(CASE WHEN ENC_COASS.claimsid IS NOT NULL 
+                             THEN ENC_COASS.Encaissement_Coass 
+                                                  ELSE ENC.encaissement 
+                                                    END,TRANS.Recoveryclaimamount*TRANS.CoinsuranceRate)
+                                END,0) AS CashAmount -- CashAmount				
+								
+       , NULL AS TotalNetCharge
+	   -- V6.2 20250226 End cs add ratio
+FROM DTW.SCH_DTW_IARD.claim C1
+     LEFT OUTER JOIN #TEMP_PROV_RESTANTE PROV_RESTANTE ON C1.claimSID = PROV_RESTANTE.claimSID
+	 --V6.2 20250226 Begin cs add ratio
+	 LEFT OUTER JOIN #TEMP_RATIO ratio on PROV_RESTANTE.ClaimSID = ratio.ClaimSID
+     --V6.2 20250226 End cs add ratio
+	 LEFT OUTER JOIN #TEMP_MT_REGLE MT_REGLE ON C1.claimSID = MT_REGLE.claimSID
+     LEFT OUTER JOIN #TEMP_MT_REGLE_COASS MT_REGLE_COASS ON C1.claimSID = MT_REGLE_COASS.claimSID
+     LEFT OUTER JOIN #TEMP_PROV_ENC_RESTANTE PROV_ENC_RESTANTE ON C1.claimSID = PROV_ENC_RESTANTE.claimSID
+     LEFT OUTER JOIN #TEMP_ENC_COASS ENC_COASS ON C1.claimSID = ENC_COASS.claimSID
+     LEFT OUTER JOIN #TEMP_ENC ENC ON C1.claimSID = ENC.claimSID
+       LEFT OUTER JOIN #TEMP_TRANS TRANS ON C1.claimSID = TRANS.claimSID
+       INNER JOIN DTW.SCH_DTW_IARD.ClaimCurrent C8 ON C1.ClaimSID = C8.ClaimSID AND C8.ValidityFlag = '1'
+       LEFT OUTER JOIN DTW.SCH_DTW_IARD.Classification_Ref_Claim C7 ON C8.ClaimStatusSID = C7.ClassificationSID
+UPDATE DTW.SCH_DTM_IARD.ClaimView_Amounts_Optim
+SET TotalGrossCharge = RemainingProvisionalAmount + PrincipalPaymentAmount + PaidFee,
+TotalNetCharge = RemainingProvisionalAmount + PrincipalPaymentAmount + PaidFee - RemainingCashProvisionalAmount - CashAmount
