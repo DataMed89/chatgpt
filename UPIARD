@@ -1,0 +1,1264 @@
+# -*- coding: utf-8 -*-
+from pyspark.sql import functions as func, Window
+from pyspark.sql.types import IntegerType, StringType
+
+from carbon_core.config.Config import Config
+from carbon_core.logger.LoggerFactory import LoggerFactory
+from robot_refine.engine import misc as misc
+
+
+class UPIard:
+    # ---------------------
+    # Setting global conf
+    # Columns selection, reprocess tables
+    # Columns selections global lists
+    # Columns selection, table AGREEMENT
+    # Récupérer la valeur brute de ClaimExposure.ClaimSID=Claim.ClaimSID puis récupérer la Claim.ReportedDate
+    # Récupérer la valeur brute de ClaimExposure.ClaimSID=ClaimCurrent.ClaimSID puis récupérer la ClaimCurrent.ReOpenDate
+    G_LOGGING_COUNT_ENABLED = True
+    G_SELECT_COL_DICT = {
+        'claimexposure': ['ExposureSID', 'CloseDate', 'UpdateTime', 'CreateTime', 'ClaimSID', 'UV', 'UT', 'UPSID',
+                          'StateSID', 'PrimaryCoverageSID', 'ClosedOutcomeSID', 'ClaimOrder'],
+        'claim': ['ClaimSID', 'ClaimNumber', 'LossDate', 'ReportedDate', 'CreateTime', 'AgreementSID', 'tech_day'],
+        'claimcurrent': ['ClaimSID', 'StateSID', 'OpeningDate', 'AgreementSID', 'CircumstanceCodeSID', 'UG',
+                         'UGInitial', 'EffectivePeriodStartDate',
+                         'CorporalClaimFlag', 'LossLocationSID', 'ClaimStatusSID', 'CloseDate', 'ReOpenDate',
+                         'LossCauseDetailSID','FNOLClaimSegment',
+                         'AssignedUser', 'description', 'agreementconstructionsid', 'ValidityFlag'],
+        'agreement': ['AgreementSID', 'UVSID', 'AgreementNumber', 'CoInsuranceTypeSID', 'tech_day'],
+        'agreementcurrent': ['AgreementSID', 'AgreementNumber', 'PortfolioSID', 'ValidityFlag', 'ComputedEndDate'],
+        'portfolio': ['PortfolioSID', 'Gatheringlabel'],
+        'claimconstructioncurrent': ['ClaimSID', 'ClaimConstructionSID', 'EffectivePeriodStartDate'],
+        'claimconstructionx': ['ClaimConstructionSID', 'DrocDate'], 
+        'claimreserve': ['ClaimSID', 'ReserveStrategySID', 'UPSID', 'ClaimReserveSID'],
+        'uv': ['UVSID', 'UVFamilySID'],
+        'postaladdress': ['PostalAddressSID', 'City', 'PostalCode', 'CountrySID', 'addressline1', 'addressline2', 
+                          'addressline3', 'addressline4', 'PostalAddressID'],
+        'classificationrefclaim': ['classificationsid', 'obj_lbll', 'obj_code', 'tech_day', 'Obj_Lbl'],
+        'claimparty': ['ClaimSID', 'ClaimPartySID', 'PartySID', 'UpdateTime'],
+        'claimpartyrole': ['ClaimPartySID', 'RoleSID', 'EffectivePeriodStartDate'],
+        'person': ['PartySID', 'FirstName', 'LastName', 'EffectivePeriodStartDate'],
+        'partycurrent': ['PartySID', 'Name', 'AgentInFunctionFlag', 'Reference'],
+        'usr': ['UserID', 'PublicID', 'CredentialSID', 'PartySID'],
+        'credential': ['UserName', 'CredentialSID'],
+        'claimdamage': ['ClaimSID', 'ClaimDamageSID', 'DamageLossCause', 'damageNatureSID', 'damageLocationSID', 'validityFlag', 'tech_day'],
+        'damagenature': ['damageNatureSID', 'Description', 'validityFlag', 'tech_day'],
+        'damagelocation': ['damageLocationSID', 'Description', 'validityFlag', 'tech_day'],
+        'claimautocurrent': ['validityflag', 'claimautosid', 'ClaimSID', 'EffectivePeriodStartDate', 'IRSALicensePlateIP', 'tech_day'],
+        'agreementconstructioncurrent': ['constructiontext', 'agreementconstructionsid', 'validityFlag', 'tech_day'],
+        'claimautox': ['validityflag', 'insuredRCRateSID', 'claimautosid', 'EffectivePeriodStartDate'],
+        'accidentreport': ['accidentreportSID', 'AccidentDiagramSID', 'ClaimSID', 'EffectivePeriodStartDate', 'validityflag'],
+        'accidentdiagram': ['AccidentDiagramSID', 'BlueCarFaultPercentageSID', 'validityflag', 'EffectivePeriodStartDate'],
+        'ref_robot': ['categorie', 'code_niveau_1', 'libelle_niveau_1'],
+        'sinaxapac_06': ['00306_KASI010_IDCIRCC', '00313_KASI010_POLE', '00309_KASI010_DCINSEE', '00018_KASI010_REGION',
+                         '00017_KASI010_CTROUV', '00022_KASI010_CTRGEST', '00052_KASI010_DTCLOA',
+                         '00053_KASI010_DTCLOM', '00321_KASI010_COASS', '00289_KASI010_AXA_COASS',
+                         '00054_KASI010_DTCLOJ', '00270_KASI010_DTDROCA', '00271_KASI010_DTDROCM',
+                         '00272_KASI010_DTDROCJ',
+                         '00084_KASI010_DTMAJA', '00085_KASI010_DTMAJM', '00086_KASI010_DTMAJJ', '00122_KASI010_DTMAJA',
+                         '00123_KASI010_DTMAJM', '00124_KASI010_DTMAJJ', '00160_KASI010_DTMAJA', '00161_KASI010_DTMAJM',
+                         '00162_KASI010_DTMAJJ', '00198_KASI010_DTMAJA', '00199_KASI010_DTMAJM', '00200_KASI010_DTMAJJ',
+                         '00236_KASI010_DTMAJA', '00237_KASI010_DTMAJM', '00238_KASI010_DTMAJJ', '00009_KASI010_DTOUVA',
+                         '00010_KASI010_DTOUVM', '00011_KASI010_DTOUVJ', '00080_KASI010_GDTOUVA',
+                         '00081_KASI010_GDTOUVM',
+                         '00082_KASI010_GDTOUVJ', '00118_KASI010_GDTOUVA', '00119_KASI010_GDTOUVM',
+                         '00120_KASI010_GDTOUVJ',
+                         '00156_KASI010_GDTOUVA', '00157_KASI010_GDTOUVM', '00158_KASI010_GDTOUVJ',
+                         '00194_KASI010_GDTOUVA',
+                         '00195_KASI010_GDTOUVM', '00196_KASI010_GDTOUVJ', '00232_KASI010_GDTOUVA',
+                         '00233_KASI010_GDTOUVM',
+                         '00234_KASI010_GDTOUVJ', '00006_KASI010_DTSURA', '00007_KASI010_DTSURM',
+                         '00008_KASI010_DTSURJ',
+                         '00485_KASI010_DTREOUVA', '00486_KASI010_DTREOUVM', '00487_KASI010_DTREOUVJ',
+                         '00026_KASI010_ETATSIN',
+                         '00083_KASI010_ETATG', '00121_KASI010_ETATG', '00159_KASI010_ETATG', '00197_KASI010_ETATG',
+                         '00235_KASI010_ETATG', '00112_KASI010_EVFORF', '00150_KASI010_EVFORF', '00188_KASI010_EVFORF',
+                         '00226_KASI010_EVFORF', '00264_KASI010_EVFORF', '00316_KASI010_FAMUV', '00024_KASI010_GEST',
+                         '00012_KASI010_NATSIN', '00002_KASI010_NUMCNT', '00001_KASI010_NUMSIN', '00336_KASI010_NOMADV',
+                         '00523_KASI010_SAMUT', '00078_KASI010_CDGAR', '00116_KASI010_CDGAR', '00154_KASI010_CDGAR',
+                         '00192_KASI010_CDGAR', '00230_KASI010_CDGAR', '00079_KASI010_GARTEC', '00117_KASI010_GARTEC',
+                         '00155_KASI010_GARTEC', '00193_KASI010_GARTEC', '00231_KASI010_GARTEC',
+                         '00003_KASI010_PRODUIT',
+                         '00107_KASI010_GREGREX', '00108_KASI010_GREGREXP', '00145_KASI010_GREGREX',
+                         '00146_KASI010_GREGREXP',
+                         '00183_KASI010_GREGREX', '00184_KASI010_GREGREXP', '00221_KASI010_GREGREX',
+                         '00222_KASI010_GREGREXP',
+                         '00259_KASI010_GREGREX', '00260_KASI010_GREGREXP', '00102_KASI010_GREGFEX',
+                         '00103_KASI010_GREGFEXP',
+                         '00140_KASI010_GREGFEX', '00141_KASI010_GREGFEXP', '00178_KASI010_GREGFEX',
+                         '00179_KASI010_GREGFEXP',
+                         '00216_KASI010_GREGFEX', '00217_KASI010_GREGFEXP', '00254_KASI010_GREGFEX',
+                         '00255_KASI010_GREGFEXP',
+                         '00097_KASI010_GREGBEX', '00098_KASI010_GREGBEXP', '00135_KASI010_GREGBEX',
+                         '00136_KASI010_GREGBEXP',
+                         '00173_KASI010_GREGBEX', '00174_KASI010_GREGBEXP', '00211_KASI010_GREGBEX',
+                         '00212_KASI010_GREGBEXP',
+                         '00249_KASI010_GREGBEX', '00250_KASI010_GREGBEXP', '00468_KASI010_GEVREG',
+                         '00469_KASI010_GEVREC',
+                         '00470_KASI010_GEVREG', '00471_KASI010_GEVREC', '00472_KASI010_GEVREG', '00473_KASI010_GEVREC',
+                         '00474_KASI010_GEVREG', '00475_KASI010_GEVREC', '00476_KASI010_GEVREG', '00477_KASI010_GEVREC',
+                         '00493_KASI010_GEVREG_HPR', '00495_KASI010_GEVREG_HPR', '00497_KASI010_GEVREG_HPR',
+                         '00499_KASI010_GEVREG_HPR', '00501_KASI010_GEVREG_HPR',
+                         '00503_KASI010_IDCIRC1', '00504_KASI010_IDCIRC2', '00335_KASI010_VIMMAT', 
+                         '00356_KASI010_AGT_REFERENCE', '00363_KASI010_CNCHANTIER', '00429_KASI010_CPOSTAL', '00324_KASI010_DCPAYS'],
+        'sinaxapac_11': ['00306_KASI010_IDCIRCC', '00313_KASI010_POLE', '00309_KASI010_DCINSEE', '00018_KASI010_REGION',
+                         '00017_KASI010_CTROUV', '00022_KASI010_CTRGEST', '00052_KASI010_DTCLOA',
+                         '00053_KASI010_DTCLOM', '00321_KASI010_COASS', '00289_KASI010_AXA_COASS',
+                         '00054_KASI010_DTCLOJ', '00270_KASI010_DTDROCA', '00271_KASI010_DTDROCM',
+                         '00272_KASI010_DTDROCJ',
+                         '00084_KASI010_DTMAJA', '00085_KASI010_DTMAJM', '00086_KASI010_DTMAJJ', '00122_KASI010_DTMAJA',
+                         '00123_KASI010_DTMAJM', '00124_KASI010_DTMAJJ', '00160_KASI010_DTMAJA', '00161_KASI010_DTMAJM',
+                         '00162_KASI010_DTMAJJ', '00198_KASI010_DTMAJA', '00199_KASI010_DTMAJM', '00200_KASI010_DTMAJJ',
+                         '00236_KASI010_DTMAJA', '00237_KASI010_DTMAJM', '00238_KASI010_DTMAJJ', '00009_KASI010_DTOUVA',
+                         '00010_KASI010_DTOUVM', '00011_KASI010_DTOUVJ', '00080_KASI010_GDTOUVA',
+                         '00081_KASI010_GDTOUVM',
+                         '00082_KASI010_GDTOUVJ', '00118_KASI010_GDTOUVA', '00119_KASI010_GDTOUVM',
+                         '00120_KASI010_GDTOUVJ',
+                         '00156_KASI010_GDTOUVA', '00157_KASI010_GDTOUVM', '00158_KASI010_GDTOUVJ',
+                         '00194_KASI010_GDTOUVA',
+                         '00195_KASI010_GDTOUVM', '00196_KASI010_GDTOUVJ', '00232_KASI010_GDTOUVA',
+                         '00233_KASI010_GDTOUVM',
+                         '00234_KASI010_GDTOUVJ', '00006_KASI010_DTSURA', '00007_KASI010_DTSURM',
+                         '00008_KASI010_DTSURJ',
+                         '00485_KASI010_DTREOUVA', '00486_KASI010_DTREOUVM', '00487_KASI010_DTREOUVJ',
+                         '00026_KASI010_ETATSIN',
+                         '00083_KASI010_ETATG', '00121_KASI010_ETATG', '00159_KASI010_ETATG', '00197_KASI010_ETATG',
+                         '00235_KASI010_ETATG', '00112_KASI010_EVFORF', '00150_KASI010_EVFORF', '00188_KASI010_EVFORF',
+                         '00226_KASI010_EVFORF', '00264_KASI010_EVFORF', '00316_KASI010_FAMUV', '00024_KASI010_GEST',
+                         '00012_KASI010_NATSIN', '00002_KASI010_NUMCNT', '00001_KASI010_NUMSIN', '00336_KASI010_NOMADV',
+                         '00523_KASI010_SAMUT', '00078_KASI010_CDGAR', '00116_KASI010_CDGAR', '00154_KASI010_CDGAR',
+                         '00192_KASI010_CDGAR', '00230_KASI010_CDGAR', '00079_KASI010_GARTEC', '00117_KASI010_GARTEC',
+                         '00155_KASI010_GARTEC', '00193_KASI010_GARTEC', '00231_KASI010_GARTEC',
+                         '00003_KASI010_PRODUIT',
+                         '00107_KASI010_GREGREX', '00108_KASI010_GREGREXP', '00145_KASI010_GREGREX',
+                         '00146_KASI010_GREGREXP',
+                         '00183_KASI010_GREGREX', '00184_KASI010_GREGREXP', '00221_KASI010_GREGREX',
+                         '00222_KASI010_GREGREXP',
+                         '00259_KASI010_GREGREX', '00260_KASI010_GREGREXP', '00102_KASI010_GREGFEX',
+                         '00103_KASI010_GREGFEXP',
+                         '00140_KASI010_GREGFEX', '00141_KASI010_GREGFEXP', '00178_KASI010_GREGFEX',
+                         '00179_KASI010_GREGFEXP',
+                         '00216_KASI010_GREGFEX', '00217_KASI010_GREGFEXP', '00254_KASI010_GREGFEX',
+                         '00255_KASI010_GREGFEXP',
+                         '00097_KASI010_GREGBEX', '00098_KASI010_GREGBEXP', '00135_KASI010_GREGBEX',
+                         '00136_KASI010_GREGBEXP',
+                         '00173_KASI010_GREGBEX', '00174_KASI010_GREGBEXP', '00211_KASI010_GREGBEX',
+                         '00212_KASI010_GREGBEXP',
+                         '00249_KASI010_GREGBEX', '00250_KASI010_GREGBEXP', '00468_KASI010_GEVREG',
+                         '00469_KASI010_GEVREC',
+                         '00470_KASI010_GEVREG', '00471_KASI010_GEVREC', '00472_KASI010_GEVREG', '00473_KASI010_GEVREC',
+                         '00474_KASI010_GEVREG', '00475_KASI010_GEVREC', '00476_KASI010_GEVREG', '00477_KASI010_GEVREC',
+                         '00493_KASI010_GEVREG_HPR', '00495_KASI010_GEVREG_HPR', '00497_KASI010_GEVREG_HPR',
+                         '00499_KASI010_GEVREG_HPR', '00501_KASI010_GEVREG_HPR',
+                         '00503_KASI010_IDCIRC1', '00504_KASI010_IDCIRC2', '00335_KASI010_VIMMAT', 
+                         '00356_KASI010_AGT_REFERENCE', '00363_KASI010_CNCHANTIER', '00429_KASI010_CPOSTAL', '00324_KASI010_DCPAYS']
+    }
+
+    G_AXAPAC_RENAME_COL_DICT = {'00306_KASI010_IDCIRCC': 'CDCIRC',
+                                '00313_KASI010_POLE': 'CDPOLE',
+                                '00309_KASI010_DCINSEE': 'CDPOSURV',
+                                '00018_KASI010_REGION': 'CDREGEST',
+                                '00017_KASI010_CTROUV': 'CTROUV',
+                                '00022_KASI010_CTRGEST': 'CTRGEST',
+                                '00026_KASI010_ETATSIN': 'ETATSIN',
+                                '00083_KASI010_ETATG': 'ETATUP_1',
+                                '00121_KASI010_ETATG': 'ETATUP_2',
+                                '00159_KASI010_ETATG': 'ETATUP_3',
+                                '00197_KASI010_ETATG': 'ETATUP_4',
+                                '00235_KASI010_ETATG': 'ETATUP_5',
+                                '00112_KASI010_EVFORF': 'EVFORF_1',
+                                '00150_KASI010_EVFORF': 'EVFORF_2',
+                                '00188_KASI010_EVFORF': 'EVFORF_3',
+                                '00226_KASI010_EVFORF': 'EVFORF_4',
+                                '00264_KASI010_EVFORF': 'EVFORF_5',
+                                '00316_KASI010_FAMUV': 'FAMUV',
+                                '00024_KASI010_GEST': 'GEST',
+                                '00012_KASI010_NATSIN': 'NATSIN',
+                                '00002_KASI010_NUMCNT': 'NMCNT',
+                                '00001_KASI010_NUMSIN': 'NMSIN',
+                                '00336_KASI010_NOMADV': 'NOMTIERS',
+                                '00523_KASI010_SAMUT': 'SAMUT',
+                                '00078_KASI010_CDGAR': 'UP_1',
+                                '00116_KASI010_CDGAR': 'UP_2',
+                                '00154_KASI010_CDGAR': 'UP_3',
+                                '00192_KASI010_CDGAR': 'UP_4',
+                                '00230_KASI010_CDGAR': 'UP_5',
+                                '00079_KASI010_GARTEC': 'UT_1',
+                                '00117_KASI010_GARTEC': 'UT_2',
+                                '00155_KASI010_GARTEC': 'UT_3',
+                                '00193_KASI010_GARTEC': 'UT_4',
+                                '00231_KASI010_GARTEC': 'UT_5',
+                                '00003_KASI010_PRODUIT': 'UV',
+                                '00107_KASI010_GREGREX': 'GREGREX_1',
+                                '00145_KASI010_GREGREX': 'GREGREX_2',
+                                '00183_KASI010_GREGREX': 'GREGREX_3',
+                                '00221_KASI010_GREGREX': 'GREGREX_4',
+                                '00259_KASI010_GREGREX': 'GREGREX_5',
+                                '00108_KASI010_GREGREXP': 'GREGREXP_1',
+                                '00146_KASI010_GREGREXP': 'GREGREXP_2',
+                                '00184_KASI010_GREGREXP': 'GREGREXP_3',
+                                '00222_KASI010_GREGREXP': 'GREGREXP_4',
+                                '00260_KASI010_GREGREXP': 'GREGREXP_5',
+                                '00102_KASI010_GREGFEX': 'GREGFEX_1',
+                                '00140_KASI010_GREGFEX': 'GREGFEX_2',
+                                '00178_KASI010_GREGFEX': 'GREGFEX_3',
+                                '00216_KASI010_GREGFEX': 'GREGFEX_4',
+                                '00254_KASI010_GREGFEX': 'GREGFEX_5',
+                                '00103_KASI010_GREGFEXP': 'GREGFEXP_1',
+                                '00141_KASI010_GREGFEXP': 'GREGFEXP_2',
+                                '00179_KASI010_GREGFEXP': 'GREGFEXP_3',
+                                '00217_KASI010_GREGFEXP': 'GREGFEXP_4',
+                                '00255_KASI010_GREGFEXP': 'GREGFEXP_5',
+                                '00097_KASI010_GREGBEX': 'GREGBEX_1',
+                                '00135_KASI010_GREGBEX': 'GREGBEX_2',
+                                '00173_KASI010_GREGBEX': 'GREGBEX_3',
+                                '00211_KASI010_GREGBEX': 'GREGBEX_4',
+                                '00249_KASI010_GREGBEX': 'GREGBEX_5',
+                                '00098_KASI010_GREGBEXP': 'GREGBEXP_1',
+                                '00136_KASI010_GREGBEXP': 'GREGBEXP_2',
+                                '00174_KASI010_GREGBEXP': 'GREGBEXP_3',
+                                '00212_KASI010_GREGBEXP': 'GREGBEXP_4',
+                                '00250_KASI010_GREGBEXP': 'GREGBEXP_5',
+                                '00468_KASI010_GEVREG': 'GEVREG_1',
+                                '00470_KASI010_GEVREG': 'GEVREG_2',
+                                '00472_KASI010_GEVREG': 'GEVREG_3',
+                                '00474_KASI010_GEVREG': 'GEVREG_4',
+                                '00476_KASI010_GEVREG': 'GEVREG_5',
+                                '00469_KASI010_GEVREC': 'GEVREC_1',
+                                '00471_KASI010_GEVREC': 'GEVREC_2',
+                                '00473_KASI010_GEVREC': 'GEVREC_3',
+                                '00475_KASI010_GEVREC': 'GEVREC_4',
+                                '00477_KASI010_GEVREC': 'GEVREC_5',
+                                '00493_KASI010_GEVREG_HPR': 'GEVREG_HPR_1',
+                                '00495_KASI010_GEVREG_HPR': 'GEVREG_HPR_2',
+                                '00497_KASI010_GEVREG_HPR': 'GEVREG_HPR_3',
+                                '00499_KASI010_GEVREG_HPR': 'GEVREG_HPR_4',
+                                '00501_KASI010_GEVREG_HPR': 'GEVREG_HPR_5',
+                                '00321_KASI010_COASS': 'TYPCOASS',
+                                '00289_KASI010_AXA_COASS': 'TX_COASS',
+                                '00503_KASI010_IDCIRC1': 'CIRCONST_DESC1', 
+                                '00504_KASI010_IDCIRC2': 'CIRCONST_DESC2', 
+                                '00335_KASI010_VIMMAT': 'IMMAT', 
+                                '00356_KASI010_AGT_REFERENCE': 'REF_DIST', 
+                                '00363_KASI010_CNCHANTIER': 'COD_CHANT', 
+                                '00429_KASI010_CPOSTAL': 'CDPOST_SURV', 
+                                '00324_KASI010_DCPAYS': 'PAYSSURV'
+                                }
+
+    G_OUTPUT_RENAME_COL_DICT = {'UG': 'CTRGEST',  # claimexposure
+                                'UGInitial': 'CTROUV',
+                                'UpdateTime': 'DTMAJUP',  # claimexposure
+                                'CreateTime': 'DTOUVUP',  # claimexposure
+                                'CloseDate': 'DTCLOT',  # claimexposure
+                                'Gatheringlabel': 'CDPOLE',  # portfolio
+                                'DrocDate': 'DTDROC',  # claimconstructionx
+                                'OpeningDate': 'DTOUV',  # claimcurrent
+                                'LossDate': 'DTSURV',  # claim
+                                'AgreementNumber': 'NMCNT',  # agreement
+                                'ClaimNumber': 'NMSIN',  # claim
+                                'City': 'VILLE_SURV',  # postaladdress
+                                'PostalCode': 'CDPOST_SURV',
+                                'CoInsuranceRate': 'TX_COASS'
+                                }
+
+    G_OUTPUT_COL = ["CDCIRC", "CDPOLE", "CDPOSURV", "CDREGEST", "CTRGEST", "CTROUV", "CDPOST_SURV",
+                    "DTCREA", "DTCLOT",
+                    "DTDROC", "DTMAJUP", 'DTMAJUP_AGR', 'DTMAJUP_FIN', "DTOUV", "DTOUVUP", "DTCLOTUP", "DTSURV", 'DTREC', 'DTREOUV',
+                    "ETATSIN",
+                    "ETATSIN_NEW", "ETATUP", "ETATUP_NEW", "EVFORF",
+                    "FAMUV", "IDGEST", "PRENOM_GEST", "NOM_GEST", "NATSIN", "NMCNT", "NMSIN", "NOMTIERS", "ROLE",
+                    "Libelle_LossCauseDetail","FNOLClaimSegment",
+                    "SAMUT", "UP", "UT", "UV", 'ZCRAC', 'ZGAR', 'RECEUP', 'RGFRUP', 'RGPRUP', 'EVRGUP', 'EVREUP',
+                    'EVRGUP_HPR', 'TX_COASS', 'TYPCOASS', 'TOP_ASSIST', 'TOP_PJ', 'TOP_CATNAT', 'TOP_CLIM', 'UPSID',
+                    'ClaimSID',
+                    'AgreementSID', 'PortfolioSID', 'ClaimConstructionSID',
+                    'PaymentClaimAmount', 'PrincipalPaymentClaimAmount', 'FeesPaymentClaimAmount', 'ReserveClaimAmount',
+                    'RecoveryClaimAmount', 'RecoveryReserveClaimAmount', 'Transaction', 'DES_LIB_1', 'DES_NAT_1', 
+                    'DES_LOC_1', 'DES_LIB_2', 'DES_NAT_2', 'DES_LOC_2', 'DES_LIB_3', 'DES_NAT_3', 'DES_LOC_3', 
+                    'ADRESSURV', 'VILLE_SURV', 'CIRCONST_DESC', 'IMMAT', 'REF_DIST', 'COD_CHANT', 'PAYSSURV', 'TX_RC', 'TX_CONV_IRSA']
+
+    G_REPROCESS_LAST_VIEW_TABLES = ["portfolio",
+                                    "claimpartyrole",
+                                    "claimcurrent",
+                                    "agreementcurrent",
+                                    "credential",
+                                    "claimexposure",
+                                    "partycurrent",
+                                    "claimreserve",
+                                    "person",
+                                    "claimconstructionx",
+                                    "claimconstructioncurtrent",
+                                    "postaladdress",
+                                    "claimparty",
+                                    "claimpartyrole",
+                                    "credential",
+                                    "accidentreport",
+                                    "accidentdiagram"]
+
+    G_CAST_LACKING_COL = ['PaymentClaimAmount', 'PrincipalPaymentClaimAmount', 'FeesPaymentClaimAmount', 'ReserveClaimAmount',
+                          'RecoveryClaimAmount', 'RecoveryReserveClaimAmount', 'RECEUP', 'RGFRUP', 'RGPRUP', 'EVRGUP',
+                          'EVREUP', 'EVRGUP_HPR']
+
+    @staticmethod
+    def select_col_dict(df_dictionary, ref_date=None):
+        for k, v in df_dictionary.items():
+            # TODO For instance is failfast, think if it should not be changed
+            if k in UPIard.G_REPROCESS_LAST_VIEW_TABLES:
+                df_dictionary[k] = misc.get_freezed_view(df_dictionary[k],
+                                                         ref_date) if ref_date else misc.get_last_view(df_dictionary[k])
+            if UPIard.G_SELECT_COL_DICT.get(k):
+                df_dictionary[k] = df_dictionary[k].select(UPIard.G_SELECT_COL_DICT[k])
+        return df_dictionary
+
+    @staticmethod
+    def dedup_satelite(df, dedup_key, sort_key='UpdateTime', drop_sortkey=True):
+        w_desc = Window.partitionBy(dedup_key).orderBy(func.col(sort_key).desc())
+        df = df.select("*", func.row_number().over(w_desc).alias('row_order')) \
+            .where(func.col('row_order') == 1).drop("row_order")
+        if drop_sortkey:
+            df = df.drop(sort_key)
+        return df
+
+    @staticmethod
+    def print_count(df, step):
+        if UPIard.G_LOGGING_COUNT_ENABLED:
+            return '{0} ----- {1}'.format(step, df.count())
+        else:
+            return 'Process {0} OK'.format(step)
+
+    @staticmethod
+    def override_etatup(df):
+        etaup_condition = \
+            (func.when(func.col('ETATUP').isin([3]) & (
+                    (func.col('RECEUP') == func.lit(0)) & (func.col('RGPRUP') == func.lit(0))), func.lit(1))
+             .when(func.col('ETATUP').isin([1, 9]) & (
+                    (func.col('RECEUP') != func.lit(0)) | (func.col('RGPRUP') != func.lit(0))), func.lit(3))
+             .when(func.col('ETATUP').isin([9]) & (func.col('RECEUP') == func.lit(0)) & (
+                    func.col('RGPRUP') == func.lit(0)) & (func.col('RGFRUP') > 0), func.lit(1))
+             .when(func.col('ETATSIN').isin([1, 3]) & func.col('ETATUP').isin([0]) & (
+                    (func.col('RECEUP') == func.lit(0)) & (func.col('RGPRUP') == func.lit(0))), func.lit(1))
+             .when(func.col('ETATSIN').isin([1, 3]) & func.col('ETATUP').isin([0]) & (
+                    (func.col('RECEUP') != func.lit(0)) | (func.col('RGPRUP') != func.lit(0))), func.lit(3))
+             .when(func.col('ETATSIN').isin([9]), func.lit(9))
+             .otherwise(func.col('ETATUP')))
+
+        df = df.withColumn('ETATUP_NEW', etaup_condition)
+
+        return df
+
+    @staticmethod
+    def override_etatsin(df):
+        # Another workaround to see if we have is completed UP state
+        def get_status_udf(data_set):
+            if 3 in data_set:
+                return 3
+            elif 1 in data_set:
+                return 1
+            else:
+                return 9
+
+        get_status = func.udf(get_status_udf, IntegerType())
+        w_asc = Window.partitionBy(['ClaimSID'])
+
+        df = df.select("*", func.collect_set('ETATUP_NEW').over(w_asc).alias('ETATUP_SET')) \
+            .withColumn('ETATSIN_NEW', func.when(func.col('ETATSIN').isin([1, 3]), get_status('ETATUP_SET'))
+                        .otherwise(func.col('ETATSIN').cast(IntegerType())))
+
+        return df
+
+    @staticmethod
+    def compute_top(df_claimexposure, df_ref):
+        up_assist = ['ASSISTANCE']
+        up_pj = ['PJ']
+        up_catnat = ['CATNAT']
+        up_clim = ['CLIM']
+        # Computing TOP
+        # creating compositekey uvut
+        df_claimexposure = df_claimexposure.withColumn('uvut', func.concat('uv', 'ut'))
+        df_claimexposure = df_claimexposure.join(func.broadcast(df_ref.filter(func.col('categorie').isin(['UP']))),
+                                                 df_claimexposure.UP == func.col('code_niveau_1'),
+                                                 'left').drop('code_niveau_1').drop('categorie').withColumnRenamed(
+            "libelle_niveau_1", "typeup") \
+            .join(func.broadcast(df_ref.filter(func.col('categorie').isin(['Garantie']))),
+                  df_claimexposure.UT == func.col('code_niveau_1'),
+                  'left').drop('code_niveau_1').drop('categorie').withColumnRenamed("libelle_niveau_1", "typeut") \
+            .join(func.broadcast(df_ref.filter(func.col('categorie').isin(['CRAC']))),
+                  df_claimexposure.uvut == func.col('code_niveau_1'),
+                  'left').drop('code_niveau_1').drop('categorie').withColumnRenamed("libelle_niveau_1", "ZCRAC") \
+            .join(func.broadcast(df_ref.filter(func.col('categorie').isin(['TYPE_GESTION']))),
+                  df_claimexposure.uvut == func.col('code_niveau_1'),
+                  'left').drop('code_niveau_1').drop('categorie').withColumnRenamed("libelle_niveau_1", "ZGAR")
+
+        df_claimexposure = df_claimexposure.withColumn('TOP_ASSIST',
+                                                       func.when(
+                                                           func.col('typeup').isin(up_assist) | func.col('typeut').isin(
+                                                               up_assist), 1).otherwise(0)) \
+            .withColumn('TOP_PJ',
+                        func.when(func.col('typeup').isin(up_pj) | func.col('typeut').isin(up_pj), 1).otherwise(0)) \
+            .withColumn('TOP_CATNAT',
+                        func.when(func.col('typeup').isin(up_catnat) | func.col('typeut').isin(up_catnat), 1).otherwise(
+                            0)) \
+            .withColumn('TOP_CLIM',
+                        func.when(func.col('typeup').isin(up_clim) | func.col('typeut').isin(up_clim), 1).otherwise(0))
+
+        return df_claimexposure
+
+    @staticmethod
+    def exposure_agg_bkp(df_exposure):
+        # Closed 4434
+        # Draft 4432
+        # Open 4433
+        # df_exposure = df_exposure.filter(func.col('ClaimOrder').isin([1])).drop('ClaimOrder')
+        # Defining order for ClosedOutcomeSID by pondering the outcome, cause we will search for max:
+        # 3042 = iscompleted => weight = 3
+        # 3043 = nopayments  => weight = 2
+        # 3041 = unnecessary => weight = 1
+        # * =>  weight = 0
+        # TODO Don't be shocked  when you see the following code, the client asked for strange things,
+        #  that no one understands. It's just blind reverse engineering.
+        isclosed_cond = func.when(func.col('StateSID').isin([4434]), 1).otherwise(0)
+
+        pondered_outcome_cond = (func.when(func.col('ClosedOutcomeSID').isin([3042]), 3)
+                                 .when(func.col('ClosedOutcomeSID').isin([3043]), 2)
+                                 .when(func.col('ClosedOutcomeSID').isin([3041]), 1)
+                                 .otherwise(0))
+
+        df_exposure = df_exposure \
+            .withColumn('is_closed', isclosed_cond) \
+            .withColumn('pondered_outcome', pondered_outcome_cond)
+
+        df_exposure_grouped = df_exposure.groupBy(['UPSID', 'ClaimSID', 'PrimaryCoverageSID', 'UV', 'UT']).agg(
+            func.max('UpdateTime').alias('UpdateTime'),
+            func.max('CloseDate').alias('CloseDate'),
+            func.min('CreateTime').alias('CreateTime'),
+            func.min('ClaimOrder').alias('ClaimOrder'),
+            func.min('is_closed').alias('is_closed'),
+            func.max('pondered_outcome').alias('pondered_outcome'))
+
+        w_upsid = Window.partitionBy(['UPSID', 'ClaimSID', 'UV', 'UT']).orderBy('ClaimOrder')
+        df_exposure_grouped = df_exposure_grouped.select('*', func.row_number().over(w_upsid).alias('row_number'),
+                                                         func.max('pondered_outcome').over(w_upsid).alias(
+                                                             'max_pondered_outcome')) \
+            .filter(func.col('row_number') == 1).drop('row_number')
+
+        # Getting ETAUP
+        etatup_condition = (func.when(func.col('is_closed').isin([0]), func.lit(0)).otherwise(
+            func.when(func.col('max_pondered_outcome').isin([1]), 9)
+                .when(func.col('max_pondered_outcome').isin([2]), 1)
+                .otherwise(3)
+        ))
+
+        df_exposure_grouped = df_exposure_grouped.withColumn('ETATUP', etatup_condition)
+        return df_exposure_grouped
+
+    @staticmethod
+    def exposure_agg(df_exposure):
+        # Closed 4434
+        # Draft 4432
+        # Open 4433
+        # df_exposure = df_exposure.filter(func.col('ClaimOrder').isin([1])).drop('ClaimOrder')
+        # Defining order for ClosedOutcomeSID by pondering the outcome, cause we will search for max:
+        # 3042 = iscompleted => weight = 3
+        # 3043 = nopayments  => weight = 2
+        # 3041 = unnecessary => weight = 1
+        # * =>  weight = 0
+        # TODO Don't be shocked  when you see the following code, the client asked for strange things,
+        #  that no one understands. It's just blind reverse engineering.
+        isclosed_cond = func.when(func.col('StateSID').isin([4434]), 1).otherwise(0)
+        pondered_outcome_cond = (func.when(func.col('ClosedOutcomeSID').isin([3042]), 3)
+                                 .when(func.col('ClosedOutcomeSID').isin([3043]), 2)
+                                 .when(func.col('ClosedOutcomeSID').isin([3041]), 1)
+                                 .otherwise(0))
+        df_exposure = df_exposure.withColumn('is_closed', isclosed_cond).withColumn('pondered_outcome',
+                                                                                    pondered_outcome_cond)
+        # WORKAROUND: Taking first UT by 'UPSID', 'ClaimSID', 'UV' key cause you can have multiple UT by UP
+        w_asc = Window.partitionBy(['UPSID', 'ClaimSID', 'UV']).orderBy('ClaimOrder')
+        df_exposure = df_exposure.select("*", func.first('UT').over(w_asc).alias('FIRST_UT')).drop(
+            'UT').withColumnRenamed('FIRST_UT', 'UT')
+        df_exposure_grouped = df_exposure.groupBy(['UPSID', 'ClaimSID', 'UV', 'UT']).agg(
+            func.max('UpdateTime').alias('UpdateTime'),
+            func.max('CloseDate').alias('CloseDate'),
+            func.min('CreateTime').alias('CreateTime'),
+            func.min('ClaimOrder').alias('ClaimOrder'),
+            func.min('is_closed').alias('is_closed'),
+            func.max('pondered_outcome').alias('pondered_outcome'))
+        # Getting ETAUP
+        etatup_condition = (func.when(func.col('is_closed').isin([0]), func.lit(0))
+            .otherwise(
+            func.when(func.col('pondered_outcome').isin([1]), 9)
+                .when(func.col('pondered_outcome').isin([2]), 1)
+                .otherwise(3)
+        ))
+        # Override CloseDate
+        close_date_cond = (func.when(func.col('is_closed').isin([0]), func.lit(None)).otherwise(func.col('CloseDate')))
+        df_exposure_grouped = df_exposure_grouped.withColumn('ETATUP', etatup_condition).withColumn('CloseDate',
+                                                                                                    close_date_cond)
+        return df_exposure_grouped
+
+    @staticmethod
+    def get_party_name(df_claimparty, df_partycurrent, df_claimpartyrole, df_person):
+        # Getting strange rule with party role
+        # 4022 Tiers professionnel responsable
+        # 4024 Tiers lésé
+        # 4025 Compagnie tiers
+        # 4026 Tiers responsable
+        df_claimparty_role = df_claimparty.join(df_claimpartyrole, ['ClaimPartySID']).filter(
+            func.col('RoleSID').isin([4022, 4024, 4025, 4026]))
+        df_claimparty_role = UPIard.dedup_satelite(df_claimparty_role, ['ClaimSID'])
+        df_claimparty_name = df_claimparty_role.join(df_person, ['PartySID'], 'left') \
+            .join(df_partycurrent, ['PartySID'], 'left')
+        names_selection_cond = func.when(func.col('LastName').isNull(), func.col('Name')).otherwise(
+            func.concat_ws(' ', func.col('FirstName'), func.col('LastName')))
+        df_claimparty_name = df_claimparty_name.select(['ClaimSID', 'RoleSID', names_selection_cond.alias('NOMTIERS')])
+        return df_claimparty_name
+
+    @staticmethod
+    def get_user_cred(df_usr, df_credential, df_person):
+        df_usr_max = df_usr.groupBy('PublicID').agg(func.max('CredentialSID').alias('CredentialSID'),
+                                                    func.max('PartySID').alias('PartySID'))
+        df_credential_usr = df_credential.join(df_usr_max, ['CredentialSID'], 'inner').join(df_person, ['PartySID'],
+                                                                                            'left').select(
+            ['UserName', 'PublicID', 'FirstName', 'LastName']).withColumnRenamed('PublicID', 'CredPublicID')
+        return df_credential_usr
+
+    @staticmethod
+    def get_financial_info(df_claimtransaction, df_claimtransactionline, df_claimreserve):
+        df_claimtransaction_filtered = df_claimtransaction.filter(
+            ~func.col('StatusSID').isin([3024, 3027, 3023, 3033]) | func.col(
+                'StatusSID').isNull()) \
+            .filter(func.col('SubtypeSID').isin([1113, 1114, 1115, 1116, 1117]))
+        df_fin = df_claimtransaction_filtered.join(df_claimtransactionline, 'ClaimTransactionSID').select(
+            ['ClaimSID', 'ClaimReserveSID', 'SubtypeSID', 'ClaimAmount', 'ReportingNotAdjustedAmount',
+             'ReportingProjectionAmount', 'LineCategorySID', 'DTMAJUP_FIN'])
+
+        totalpayment_cond = (
+            func.when(~func.col("SubtypeSID").isNull() & func.col('SubtypeSID').isin([1113]), func.col("ClaimAmount"))
+                .otherwise(func.lit(0)))
+        # Filter: Valid payment transaction from the latest view
+        # (StatusSID, obj_lbll)
+        # 3024,draft,Ébauche
+        # 3027,pendingapproval,Approbation en attente
+        # 3023,denied,Refusé
+        # 3032,recoded,Transféré Take OUT
+        # 3028,pendingrecode,Transfert en attente  TAKE OUT
+        # 3033,rejected,Rejeté
+        # 3036,stopped, Annulé TAKE OUT
+        # 3039,transferred,Transféré Taken out
+        # 3040,voided, Annulé TAKE OUT
+        # (SubtypeSID, obj_lbll)
+        # (1113, Paiement)
+        # 1114,Recovery,Encaissement
+        # 1115,RecoveryReserve,Provision d'encaissement
+        # 1113,Payment,Paiement
+        # 1116,Reserve,Provision
+        # 1117, Transaction
+        # LineCategorySID
+        # 5838,other_fees_ext,Frais
+        # 5836,expert_fees_ext,Honoraires d'expert
+        # 5866,judicary_fees_ext,Frais judiciaires et depens
+        # 5837,lawyer_fees_ext,Honoraires d'avocat
+        # 5880,other_provider_fees_ext,Honoraires autres prestataires
+        # 5854,fees_ext,Honoraires
+        # 5842,CourtCosts,Débours
+        # 5890,uncovered_investigations_ext,Investigations sur dommages non garantis
+        # 6108,adjustment_coass_fees_ext,Régularisation coassurance frai
+        # 'recoded', 'pendingrecode', 'stopped', 'transferred', 'voided')
+
+        fee_cond = (func.when(~func.col("SubtypeSID").isNull() & func.col('SubtypeSID').isin([1113]) &
+                              func.col('LineCategorySID').isin(
+                                  [5838, 5836, 5866, 5837, 5880, 5854, 5842, 5890, 6108, 6170]),
+                              func.col("ClaimAmount"))
+                    .otherwise(func.lit(0)))
+        principalpayment_cond = (func.when(~func.col("SubtypeSID").isNull() & func.col('SubtypeSID').isin([1113]) &
+                                           (func.col("LineCategorySID").isNull() | ~func.col('LineCategorySID').isin(
+                                               [5838, 5836, 5866, 5837, 5880, 5854, 5842, 5890, 6108, 6170])),
+                                           func.col("ClaimAmount"))
+                                 .otherwise(func.lit(0)))
+        reserve_cond = (
+            func.when(~func.col("SubtypeSID").isNull() & func.col('SubtypeSID').isin([1116]), func.col("ClaimAmount"))
+                .otherwise(func.lit(0)))
+        recovery_cond = (
+            func.when(~func.col("SubtypeSID").isNull() & func.col('SubtypeSID').isin([1114]), func.col("ClaimAmount"))
+                .otherwise(func.lit(0)))
+        recoveryreserve_cond = (
+            func.when(~func.col("SubtypeSID").isNull() & func.col('SubtypeSID').isin([1115]), func.col("ClaimAmount"))
+                .otherwise(func.lit(0)))
+        transaction_cond = (
+            func.when(~func.col("SubtypeSID").isNull() & func.col('SubtypeSID').isin([1117]), func.col("ClaimAmount"))
+                .otherwise(func.lit(0)))
+        payment_reporting_cond = (
+            func.when(~func.col("SubtypeSID").isNull() & func.col('SubtypeSID').isin([1113]),
+                      func.col("ReportingNotAdjustedAmount"))
+                .otherwise(func.lit(0)))
+        reserve_reporting_cond = (
+            func.when(~func.col("SubtypeSID").isNull() & func.col('SubtypeSID').isin([1116]),
+                      func.col("ReportingNotAdjustedAmount"))
+                .otherwise(func.lit(0)))
+
+        reporting_projection_cond = (
+            func.when(~func.col("SubtypeSID").isNull() & func.col('SubtypeSID').isin([1116]),
+                      func.col("ReportingProjectionAmount"))
+                .otherwise(func.lit(0)))
+
+        df_fin = df_fin.withColumn('PaymentClaimAmount', totalpayment_cond) \
+            .withColumn('PrincipalPaymentClaimAmount', principalpayment_cond) \
+            .withColumn('FeesPaymentClaimAmount', fee_cond) \
+            .withColumn('ReserveClaimAmount', reserve_cond) \
+            .withColumn('RecoveryClaimAmount', recovery_cond) \
+            .withColumn('RecoveryReserveClaimAmount', recoveryreserve_cond) \
+            .withColumn('Transaction', transaction_cond) \
+            .withColumn('PaymentReportingAmount', payment_reporting_cond) \
+            .withColumn('ReserveReportingAmount', reserve_reporting_cond) \
+            .withColumn('ReserveReportingProjectionAmount', reporting_projection_cond)
+
+        df_fin_reserve = df_fin.join(df_claimreserve.select(['UPSID', 'ClaimReserveSID']), ['ClaimReserveSID'])
+        df_fin_reserve = df_fin_reserve.groupBy(['ClaimSID', 'UPSID']).agg(
+            func.sum('PaymentClaimAmount').alias('PaymentClaimAmount'),
+            func.sum('PrincipalPaymentClaimAmount').alias('PrincipalPaymentClaimAmount'),
+            func.sum('FeesPaymentClaimAmount').alias('FeesPaymentClaimAmount'),
+            func.sum('ReserveClaimAmount').alias('ReserveClaimAmount'),
+            func.sum('RecoveryClaimAmount').alias('RecoveryClaimAmount'),
+            func.sum('RecoveryReserveClaimAmount').alias('RecoveryReserveClaimAmount'),
+            func.sum('Transaction').alias('Transaction'),
+            func.sum('PaymentReportingAmount').alias('PaymentReportingAmount'),
+            func.sum('ReserveReportingAmount').alias('ReserveReportingAmount'),
+            func.sum('ReserveReportingProjectionAmount').alias('ReserveReportingProjectionAmount'),
+            func.max('DTMAJUP_FIN').alias('DTMAJUP_FIN')
+        )
+
+        return df_fin_reserve
+
+    @staticmethod
+    def get_coinsurance_rate(df_coinsuranceplan, df_coinsuranceplaninsurer, df_partycurrent):
+        df_coinsuranceratesuiveuse = df_coinsuranceplan.join(df_coinsuranceplaninsurer, ["CoinsuranceplanSID"]) \
+            .join(df_partycurrent, ["PartySID"]) \
+            .filter(func.col("IsAXALineConcernedFlag") == '1') \
+            .filter(func.col("Name").like('%AXA%')) \
+            .select(["AgreementSID", "CoInsuranceRate"]) \
+            .withColumnRenamed('CoInsuranceRate', 'CoInsuranceRateSuiveuse')
+
+        df_coinsurancerateaperitrice = df_coinsuranceplan.join(df_coinsuranceplaninsurer, ["CoinsuranceplanSID"]) \
+            .join(df_partycurrent, ["PartySID"]) \
+            .filter(func.col("IsLeaderFlag") == '1') \
+            .filter(func.col("Name").like('%AXA%')) \
+            .select(["AgreementSID", "CoInsuranceRate"]) \
+            .withColumnRenamed('CoInsuranceRate', 'CoInsuranceRateAperitrice')
+
+        df_coinsurancerate = df_coinsuranceratesuiveuse.join(df_coinsurancerateaperitrice, ["AgreementSID"], 'full')
+
+        return df_coinsurancerate
+
+    @staticmethod
+    def lit_lacking_columns(df, lit_value=None, dtypes=None, axapac=False):
+        if axapac:
+            select_list = []
+        else:
+            select_list = ['DTOBS']
+        if not dtypes:
+            dtypes = [(el, 'string') for el in UPIard.G_OUTPUT_COL]
+        for col_name, col_type in dtypes:
+            if col_name not in df.columns:
+                select_list.append(func.lit(lit_value).cast(col_type).alias(col_name))
+            elif col_name in ['ETATSIN', 'ETATUP']:
+                select_list.append(func.col(col_name))
+            else:
+                select_list.append(func.col(col_name).cast(col_type))
+        return df.select(select_list)
+
+    @staticmethod
+    def get_history_norm(df_dictionary, ref_date):
+        w_desc = Window.partitionBy(['UP', 'NMSIN']).orderBy(func.col('DTOBS').desc())
+        df_ref = df_dictionary['ref_robot']
+        # Format date columns
+        df_infocentre_auto = misc.timestamp_to_date(df_dictionary['sinistres_auto'])
+        df_infocentre_auto = df_infocentre_auto \
+            .withColumn('TX_COASS',func.when(func.col('TXCOAXA') > 1, func.col('TXCOAXA').cast('double') / 100) \
+                .otherwise(func.col('TXCOAXA').cast('double')))
+        df_infocentre_nonauto = misc.timestamp_to_date(df_dictionary['sinistres_nonauto'])
+        df_infocentre_nonauto = df_infocentre_nonauto \
+            .withColumn('TX_COASS',func.when(func.col('TXCOAXA') > 1, func.col('TXCOAXA').cast('double') / 100) \
+                .otherwise(func.col('TXCOAXA').cast('double')))
+        # Calculate top
+        df_infocentre_auto = UPIard.compute_top(df_infocentre_auto, df_ref)
+        df_infocentre_nonauto = UPIard.compute_top(df_infocentre_nonauto, df_ref)
+        # Uniform schema
+        df_infocentre_auto = UPIard.lit_lacking_columns(df_infocentre_auto)
+        df_infocentre_nonauto = UPIard.lit_lacking_columns(df_infocentre_nonauto)
+        # Union auto and nonauto
+        df_infocentre = df_infocentre_auto.union(df_infocentre_nonauto) \
+            .withColumn('NMCNT', func.concat(func.lit('00'), func.col('NMCNT'))) \
+            .withColumn('ClaimSID', func.col('NMSIN')) \
+            .withColumn('TX_COASS', 
+                        func.when(func.col('TX_COASS') > 1, func.col('TX_COASS') / 100)
+                               .otherwise(func.col('TX_COASS')))
+            # .withColumn('TX_COASS', (func.col('TXCOAXA').cast('double'))/100)
+        df_infocentre = df_infocentre \
+            .filter(func.col('DTSURV').isNotNull()) \
+            .filter(func.col('DTOBS') < ref_date)
+        df_infocentre = df_infocentre.select("*", func.row_number().over(w_desc).alias('row_order')) \
+            .where(func.col('row_order') == 1).drop("row_order").drop("DTOBS")
+        df_infocentre = UPIard.override_etatup(df_infocentre)
+        df_infocentre = UPIard.override_etatsin(df_infocentre)
+        df_infocentre = df_infocentre.select(UPIard.G_OUTPUT_COL)
+        df_infocentre = df_infocentre.withColumn('LOAD_DATE', func.lit(ref_date).cast(StringType()))
+        df_infocentre = misc.round_decimal(df_infocentre, 4)
+        df_infocentre = misc.string_to_double(df_infocentre, UPIard.G_CAST_LACKING_COL)
+        df_infocentre = df_infocentre \
+            .withColumn('DTMAJUP', func.when(func.col('DTMAJUP').isNull(), func.col('DTMAJUP_AGR')).otherwise(func.col('DTMAJUP'))) \
+            .withColumn('flag', func.lit('IFC'))
+
+        return df_infocentre
+
+    @staticmethod
+    def join_upiard_axapac_history(df_dictionary, df_up, df_axapac, ref_date):
+        df_history = df_dictionary['bvup']
+        df_history = df_history.select([(func.col(i) if i in df_history.columns else func.lit(None)).alias(i) 
+                                        for i in UPIard.G_OUTPUT_COL+['FLAG_MODIF', 'LOAD_DATE', 'flag']])
+        df_up = df_up.select(*UPIard.G_OUTPUT_COL, func.lit('DTW').alias('flag'))
+        df_axapac = df_axapac.select(*UPIard.G_OUTPUT_COL, func.lit('AXAPAC').alias('flag'))
+
+        w_desc_1 = Window.partitionBy(['UP', 'NMSIN']).orderBy(func.col('flag').desc())
+
+        df_up_axapac = df_up.unionByName(df_axapac).select("*", func.row_number().over(w_desc_1).alias('row_order')) \
+            .where(func.col('row_order') == 1)
+
+        df_up_axapac = df_up_axapac.select(UPIard.G_OUTPUT_COL).exceptAll(df_history.select(UPIard.G_OUTPUT_COL)) \
+            .join(df_up_axapac.select('NMSIN', 'UP', 'flag'), on = ['NMSIN', 'UP'], how = 'inner').withColumn("priority", func.lit(1)).withColumn('LOAD_DATE', func.lit(ref_date).cast(StringType()))
+
+        df_history = df_history.withColumn("priority", func.lit(2))
+
+        w_asc = Window.partitionBy(['UP', 'NMSIN']).orderBy(func.col('priority').asc())
+        w_desc = Window.partitionBy(['UP', 'NMSIN']).orderBy(func.col('priority').desc())
+
+        df = df_history \
+            .unionByName(df_up_axapac, allowMissingColumns=True)
+
+        df = df.withColumn('DTDROC', func.first('DTDROC', True).over(w_desc))
+
+        df = df.select("*", func.row_number().over(w_asc).alias('row_order')) \
+            .where(func.col('row_order') == 1) \
+            .withColumn('FLAG_MODIF', func.when(func.col('priority') == 2, 0).otherwise(1)) \
+            .drop("row_order").drop('priority')
+
+        return df
+
+    @staticmethod
+    def get_typcoass(df_claimexposure, df_classificationrefclaim):
+        typcoass_cond = func.when(func.col('obj_lbll').contains('apéritrice'), 'N').when(
+            func.col('obj_lbll').contains('suiveuse'), 'O').otherwise(None)
+
+        df_claimexposure = df_claimexposure \
+            .join(func.broadcast(df_classificationrefclaim.select(['classificationsid', 'obj_lbll'])),
+                  func.col('CoInsuranceTypeSID') == func.col('classificationsid'), 'left') \
+            .withColumn('TYPCOASS', typcoass_cond) \
+            .drop('classificationsid', 'obj_lbll')
+
+        return df_claimexposure
+
+    @staticmethod
+    def concat_axapac_dates(df):
+        dates = {
+            'DTCLOT': ['00052_KASI010_DTCLOA', '00053_KASI010_DTCLOM', '00054_KASI010_DTCLOJ'],
+            'DTDROC': ['00270_KASI010_DTDROCA', '00271_KASI010_DTDROCM', '00272_KASI010_DTDROCJ'],
+            'DTOUV': ['00009_KASI010_DTOUVA', '00010_KASI010_DTOUVM', '00011_KASI010_DTOUVJ'],
+            'DTSURV': ['00006_KASI010_DTSURA', '00007_KASI010_DTSURM', '00008_KASI010_DTSURJ'],
+            'DTREOUV': ['00485_KASI010_DTREOUVA', '00486_KASI010_DTREOUVM', '00487_KASI010_DTREOUVJ'],
+            'DTMAJUP_1': ['00084_KASI010_DTMAJA', '00085_KASI010_DTMAJM', '00086_KASI010_DTMAJJ'],
+            'DTMAJUP_2': ['00122_KASI010_DTMAJA', '00123_KASI010_DTMAJM', '00124_KASI010_DTMAJJ'],
+            'DTMAJUP_3': ['00160_KASI010_DTMAJA', '00161_KASI010_DTMAJM', '00162_KASI010_DTMAJJ'],
+            'DTMAJUP_4': ['00198_KASI010_DTMAJA', '00199_KASI010_DTMAJM', '00200_KASI010_DTMAJJ'],
+            'DTMAJUP_5': ['00236_KASI010_DTMAJA', '00237_KASI010_DTMAJM', '00238_KASI010_DTMAJJ'],
+            'DTOUVUP_1': ['00080_KASI010_GDTOUVA', '00081_KASI010_GDTOUVM', '00082_KASI010_GDTOUVJ'],
+            'DTOUVUP_2': ['00118_KASI010_GDTOUVA', '00119_KASI010_GDTOUVM', '00120_KASI010_GDTOUVJ'],
+            'DTOUVUP_3': ['00156_KASI010_GDTOUVA', '00157_KASI010_GDTOUVM', '00158_KASI010_GDTOUVJ'],
+            'DTOUVUP_4': ['00194_KASI010_GDTOUVA', '00195_KASI010_GDTOUVM', '00196_KASI010_GDTOUVJ'],
+            'DTOUVUP_5': ['00232_KASI010_GDTOUVA', '00233_KASI010_GDTOUVM', '00234_KASI010_GDTOUVJ'],
+        }
+
+        for k, v in dates.items():
+            # axapac date equal 1800-0-0 when the date is missing
+            empty_cond_1 = func.col(v[0]) == func.lit('1800')
+            empty_cond_2 = func.col(v[1]) == func.lit('0')
+            empty_cond_3 = func.col(v[2]) == func.lit('0')
+
+            # month and day both < 10
+            day_cond = func.col(v[2]) < func.lit(10)
+            month_cond = func.col(v[1]) < func.lit(10)
+
+            df = df.withColumn(k,
+                     func.when(empty_cond_1 & empty_cond_2 & empty_cond_3, func.lit(None))
+                         .when(day_cond & month_cond, func.concat(func.col(v[0]), func.lit('-'), func.lit('0'), func.col(v[1]), func.lit('-'), func.lit('0'), func.col(v[2])))
+                         .when(month_cond, func.concat(func.col(v[0]), func.lit('-'), func.lit('0'), func.col(v[1]), func.lit('-'), func.col(v[2])))
+                         .when(day_cond, func.concat(func.col(v[0]), func.lit('-'), func.col(v[1]), func.lit('-'), func.lit('0'), func.col(v[2])))
+                         .otherwise(func.concat(func.col(v[0]), func.lit('-'), func.col(v[1]), func.lit('-'), func.col(v[2])))
+                               )
+
+        return df
+
+    @staticmethod
+    def get_sin_axapac(df_dictionary, ref_date):
+        df_auto = df_dictionary['sinaxapac_06'].where(func.col('tech_day')<=str(ref_date)[0:10])
+        df_nonauto = df_dictionary['sinaxapac_11'].where(func.col('tech_day')<=str(ref_date)[0:10])
+        df_ref = df_dictionary['ref_robot']
+        w_last_sin = Window.partitionBy(['00001_KASI010_NUMSIN']).orderBy(func.col('tech_day').desc())
+        df_axapac = df_auto.unionByName(df_nonauto).select('*', func.row_number().over(w_last_sin).alias('row_number')).filter(func.col('row_number') == 1).drop('row_number')
+
+        df_axapac = UPIard.concat_axapac_dates(df_axapac)
+        df_axapac = misc.rename_df(df_axapac, UPIard.G_AXAPAC_RENAME_COL_DICT) \
+            .withColumn('IDGEST', func.col('GEST')) \
+            .withColumn('PRENOM_GEST', func.col('GEST')) \
+            .withColumn('NOM_GEST', func.col('GEST'))
+
+        unpivotexpr = """stack(5,UP_1, UT_1, DTMAJUP_1, DTOUVUP_1 ,ETATUP_1, EVFORF_1 ,
+                                     GREGREX_1, GREGREXP_1, GREGFEX_1, GREGFEXP_1, GREGBEX_1, GREGBEXP_1,
+                                     GEVREG_1, GEVREC_1, GEVREG_HPR_1,
+                                     UP_2, UT_2, DTMAJUP_2, DTOUVUP_2 ,ETATUP_2, EVFORF_2 ,
+                                     GREGREX_2, GREGREXP_2, GREGFEX_2, GREGFEXP_2, GREGBEX_2, GREGBEXP_2,
+                                     GEVREG_2, GEVREC_2, GEVREG_HPR_2,
+                                     UP_3, UT_3, DTMAJUP_3, DTOUVUP_3 ,ETATUP_3, EVFORF_3 ,
+                                     GREGREX_3, GREGREXP_3, GREGFEX_3, GREGFEXP_3, GREGBEX_3, GREGBEXP_3,
+                                     GEVREG_3, GEVREC_3, GEVREG_HPR_3,
+                                     UP_4, UT_4, DTMAJUP_4, DTOUVUP_4 ,ETATUP_4, EVFORF_4 ,
+                                     GREGREX_4, GREGREXP_4, GREGFEX_4,
+                                     GREGFEXP_4, GREGBEX_4, GREGBEXP_4,
+                                     GEVREG_4, GEVREC_4, GEVREG_HPR_4,
+                                     UP_5, UT_5, DTMAJUP_5, DTOUVUP_5 ,ETATUP_5, EVFORF_5 ,
+                                     GREGREX_5, GREGREXP_5, GREGFEX_5, GREGFEXP_5, GREGBEX_5, GREGBEXP_5,
+                                     GEVREG_5, GEVREC_5, GEVREG_HPR_5)
+                              as (UP, UT, DTMAJUP, DTOUVUP, ETATUP, EVFORF,
+                                     GREGREX, GREGREXP, GREGFEX, GREGFEXP, GREGBEX, GREGBEXP,
+                                     GEVREG, GEVREC, GEVREG_HPR)"""
+
+        df_axapac = df_axapac \
+            .select('CDREGEST', 'CDPOLE', 'CDREGEST', 'CDPOSURV', 'CTROUV', 'CTRGEST', 'DTCLOT', 'DTDROC', 'DTOUV',
+                    'DTSURV', 'DTREOUV', 'ETATSIN',
+                    'FAMUV', 'IDGEST', 'PRENOM_GEST', 'NOM_GEST', 'NATSIN', 'NMCNT', 'NMSIN', 'NOMTIERS', 'SAMUT',
+                    'UV', 'CDCIRC', 'TX_COASS', 'TYPCOASS', func.expr(unpivotexpr),
+                    func.concat_ws(' ', 'CIRCONST_DESC1', 'CIRCONST_DESC2').alias('CIRCONST_DESC'), 
+                    'IMMAT', 'REF_DIST', 'COD_CHANT', func.lpad('CDPOST_SURV', 5, '0').alias('CDPOST_SURV'), 
+                    'PAYSSURV') \
+            .filter(func.col('UP') != '') \
+            .withColumn('RECEUP', func.col('GREGREX') + func.col('GREGREXP')) \
+            .withColumn('RGFRUP', func.col('GREGFEX') + func.col('GREGFEXP')) \
+            .withColumn('RGPRUP', func.col('GREGBEX') + func.col('GREGBEXP')) \
+            .withColumn('EVRGUP', func.col('GEVREG')) \
+            .withColumn('EVRGUP_HPR', func.col('GEVREG_HPR')) \
+            .withColumn('EVREUP', func.col('GEVREC')) \
+            .withColumn('ClaimSID', func.col('NMSIN')) \
+            .withColumn('NMCNT', func.concat(func.lit('00'), func.col('NMCNT'))) \
+            .withColumn('ETATUP', func.col('ETATUP').cast(IntegerType())) \
+            .withColumn('ETATSIN', func.col('ETATSIN').cast(IntegerType())) \
+            .withColumn('TX_COASS', 
+                        func.when(func.col('TX_COASS') > 1, func.col('TX_COASS') / 100)
+                               .otherwise(func.col('TX_COASS')))
+
+        df_axapac = misc.trim_string(df_axapac, ['FAMUV', 'UV', 'UP', 'UT'])
+        df_axapac = UPIard.compute_top(df_axapac, df_ref)
+        df_axapac = UPIard.lit_lacking_columns(df_axapac, axapac=True)
+        df_axapac = UPIard.override_etatup(df_axapac)
+        df_axapac = UPIard.override_etatsin(df_axapac)
+        df_axapac = df_axapac.withColumn('ClaimSID', func.lit(None)).select(UPIard.G_OUTPUT_COL)
+        df_axapac = df_axapac.withColumn('LOAD_DATE', func.lit(ref_date).cast(StringType()))
+        df_axapac = misc.round_decimal(df_axapac, 4)
+        df_axapac = misc.string_to_double(df_axapac, UPIard.G_CAST_LACKING_COL)
+        df_axapac = df_axapac.withColumn('flag', func.lit('AXAPAC'))
+
+        return df_axapac
+
+    @staticmethod
+    def join_up_iard(df_dictionary, ref_date):
+        # Selecting only used columns
+        df_dictionary = UPIard.select_col_dict(df_dictionary, ref_date)
+        #
+        df_classificationrefclaim = UPIard.dedup_satelite(df_dictionary['classificationrefclaim'], 'ClassificationSID',
+                                                          sort_key='tech_day', drop_sortkey=True)
+        df_agreement = UPIard.dedup_satelite(df_dictionary['agreement'], 'AgreementSID', sort_key='tech_day', drop_sortkey=True)
+        df_claim = UPIard.dedup_satelite(df_dictionary['claim'], 'claimSID', sort_key='tech_day', drop_sortkey=True)
+        df_portfolio = df_dictionary['portfolio']
+        df_claimparty = df_dictionary['claimparty']
+        df_claimpartyrole = UPIard.dedup_satelite(df_dictionary['claimpartyrole'], ['ClaimPartySID'],
+                                                  sort_key='EffectivePeriodStartDate')
+        # 3100 Déclaration en cours, 3102 Cloturé en Ebauche, 3103 Suspens soldé, 3104 Ebauche, 3105 Suspens
+        df_claimcurrent = UPIard.dedup_satelite(df_dictionary['claimcurrent'].filter((func.col('ValidityFlag') == func.lit('1')) & (
+            ~func.col('ClaimStatusSID').isin([3100, 3102, 3103, 3104, 3105]))), 'claimSID', sort_key='EffectivePeriodStartDate', drop_sortkey=True)
+        df_agreementcurrent = df_dictionary['agreementcurrent'].filter((func.col('ValidityFlag') == '1')&(func.col('ComputedEndDate') == '9999-12-31T00:00:00Z'))
+        df_claimexposure = df_dictionary['claimexposure']
+        #wind_spec = Window.partitionBy('ClaimTransactionSID').orderBy(func.col('TechnicalLastVersionFlag').desc(), 
+        #                                                                  func.col('EffectivePeriodStartDate').desc(), 
+        #                                                                  func.col('ClaimTransactionID').desc(), 
+        #                                                                  func.col('UpdateTime').desc())
+
+                        
+        wind_spec = Window.partitionBy('ClaimTransactionSID').orderBy(func.col('EffectivePeriodStartDate').desc(), 
+                                                                      func.col('EffectivePeriodEndDate').desc(),
+                                                                      func.col('ClaimTransactionID').desc(),
+                                                                      func.col('UpdateTime').desc())
+
+        df_claimtransaction = df_dictionary['claimtransaction'].where((func.col('tech_day')>='2024-03-14')&(func.col('ValidityFlag') == 1))\
+                .withColumn('row_order', func.row_number().over(wind_spec)).where(func.col('row_order') == 1).drop('row_order')
+
+        #wind_spec = Window.partitionBy('ClaimTransactionLineSID').orderBy(func.col('TechnicalLastVersionFlag').desc(), 
+        #                                                                  func.col('EffectivePeriodStartDate').desc(), 
+        #                                                                  func.col('ClaimTransactionLineID').desc(), 
+        #                                                                  func.col('UpdateTime').desc(), 
+        #                                                                  func.col('ClaimTransactionSID').desc(), 
+        #                                                                  func.col('DeductibleSID').desc())
+
+        wind_spec = Window.partitionBy('ClaimTransactionLineSID').orderBy(func.col('EffectivePeriodStartDate').desc(),
+                                                                          func.col('EffectivePeriodEndDate').desc(),
+                                                                          func.col('ClaimTransactionLineID').desc(),
+                                                                          func.col('UpdateTime').desc(), 
+                                                                          func.col('ClaimTransactionSID').desc(), 
+                                                                          func.col('DeductibleSID').desc())
+ 
+        df_claimtransactionline = df_dictionary['claimtransactionline'].where((func.col('tech_day')>='2024-03-14')&(func.col('ValidityFlag') == 1))\
+                .withColumn('row_order', func.row_number().over(wind_spec)).where(func.col('row_order') == 1).drop('row_order')
+
+        #df_coinsuranceplaninsurer = df_dictionary['coinsuranceplaninsurer']
+
+        wind_spec = Window.partitionBy('CoInsurancePlanInsurerSID', 'CoInsurancePlanSID').orderBy(
+            func.col('EffectivePeriodStartDate').desc(),
+            func.col('EffectivePeriodEndDate').desc(),
+            func.col('CoInsurancePlanInsurerID').desc(),
+            func.col('UpdateTime').desc())
+
+        df_coinsuranceplaninsurer = df_dictionary['coinsuranceplaninsurer'].where((func.col('tech_day') >= '2024-05-22') & (func.col('ValidityFlag') == 1)) \
+            .withColumn('row_order', func.row_number().over(wind_spec)).where(func.col('row_order') == 1).drop('row_order')
+
+        #df_coinsuranceplan = df_dictionary['coinsuranceplan']
+
+        wind_spec = Window.partitionBy('CoInsurancePlanSID', 'AgreementSID').orderBy(func.col('EffectivePeriodStartDate').desc(),
+            func.col('EffectivePeriodEndDate').desc(),
+            func.col('EffectivePeriodEndDate').desc(),
+            func.col('CoInsurancePlanID').desc(),
+            func.col('UpdateTime').desc())
+
+        df_coinsuranceplan = df_dictionary['coinsuranceplan'].where((func.col('tech_day') >= '2024-05-22') & (func.col('ValidityFlag') == 1)) \
+            .withColumn('row_order', func.row_number().over(wind_spec)).where(func.col('row_order') == 1).drop('row_order')
+
+        df_partycurrent = df_dictionary['partycurrent']
+
+        df_claimreserve = df_dictionary['claimreserve']
+        df_person = UPIard.dedup_satelite(df_dictionary['person'], ['PartySID'], sort_key='EffectivePeriodStartDate')
+        df_claimconstructionx = df_dictionary['claimconstructionx']
+        df_claimconstructioncurrent = UPIard.dedup_satelite(df_dictionary['claimconstructioncurrent'], ['ClaimSID'],
+                                                            sort_key='EffectivePeriodStartDate')
+        df_postaladdress = df_dictionary['postaladdress'].withColumn('PostalCode',func.lpad('PostalCode', 5, '0'))
+        df_uv = df_dictionary['uv']
+        df_ref = df_dictionary['ref_robot']
+
+        df_usr = df_dictionary['usr']
+        df_credential = df_dictionary['credential']
+
+        # Renaming to avoid collisions
+        df_claim = df_claim \
+            .withColumnRenamed('ReportedDate', 'DTREC') \
+            .withColumnRenamed('CreateTime', 'DTCREA') \
+            .withColumnRenamed('AgreementSID', 'AgreementSIDClaim') \
+            .withColumnRenamed('ValidityFlag', 'ValidityFlagClaim')
+        df_claimcurrent = df_claimcurrent \
+            .withColumnRenamed('ReOpenDate', 'DTREOUV') \
+            .withColumnRenamed('AgreementSID', 'AgreementSIDClaimCurrent')
+        df_agreementcurrent = df_agreementcurrent \
+            .withColumnRenamed('AgreementNumber', 'AgreementNumberAgreementCurrent') \
+            .withColumnRenamed('ValidityFlag', 'ValidityFlagAgreement')
+        df_agreement = df_agreement \
+            .withColumnRenamed('AgreementNumber', 'AgreementNumberAgreement')
+        df_claimtransactionline = df_claimtransactionline \
+            .withColumnRenamed('UpdateTime', 'DTMAJUP_FIN') \
+            .withColumn('ReportingProjectionAmount', func.lit(0.0000))
+
+        # ClaimstatusSID 3100,3102,3103,3104 et 3105
+        df_claimexposure = UPIard.exposure_agg(df_claimexposure).withColumnRenamed('CloseDate', 'DTCLOTUP')
+        df_claimcurrent = df_claimcurrent.withColumnRenamed('CloseDate', 'DTCLOT')
+
+        # ----------------------- JOINS ---------------------------------------
+        # DEBUG logging
+        __logger = LoggerFactory.getLogger(log_level=Config().logging_options.log_level)
+        # ClaimCurrent
+        # Starting with claimcurrent cause there is an inner join
+        #  df_claimexposure = df_claimexposure.limit(100)
+        df_claimexposure = df_claimexposure.join(df_claimcurrent, ['ClaimSID'], 'inner')
+        # __logger.info(UPIard.print_count(df_claimexposure, 'df_claimcurrent'))
+
+        # CLAIMEXPOSURE
+        df_claimexposure = df_claimexposure.join(df_claim, ['ClaimSID'], 'left') \
+            .withColumn('AgreementSID', func.when(func.col('AgreementSIDClaimCurrent').isNull(),
+                                                  func.col('AgreementSIDClaim')).otherwise(
+            func.col('AgreementSIDClaimCurrent')))
+
+        # AGREEMENT
+        # AgreementNumber
+        df_claimexposure = df_claimexposure.join(df_agreement, ['AgreementSID'], 'left')
+        # __logger.info(UPIard.print_count(df_claimexposure, 'df_agreement'))
+
+        # UV
+        df_claimexposure = df_claimexposure.join(df_uv, ['UVSID'], 'left')
+        # __logger.info(UPIard.print_count(df_claimexposure, 'df_uv'))
+
+        # AGREEMENTCURRENT/PORTFOLIO
+        df_portfolio = df_portfolio.distinct()
+        df_claimexposure = df_claimexposure.join(df_agreementcurrent, ['AgreementSID'], 'left') \
+            .withColumn('AgreementNumber', func.when(func.col('AgreementNumberAgreementCurrent').isNull(),
+                                                     func.col('AgreementNumberAgreement')).otherwise(
+            func.col('AgreementNumberAgreementCurrent')))
+
+        df_claimexposure = df_claimexposure.join(df_portfolio, ['PortFolioSID'], 'left')
+        # __logger.info(UPIard.print_count(df_claimexposure, 'df_agreementcurrent'))
+
+        # PostallAddress
+        df_claimexposure = df_claimexposure.join(df_postaladdress,
+                                                 df_claimexposure.LossLocationSID == df_postaladdress.PostalAddressSID,
+                                                 'left')
+        # __logger.info(UPIard.print_count(df_claimexposure, 'df_postaladdress'))
+
+        # ClaimReserve
+        df_claimexposure = df_claimexposure.join(df_claimreserve, ['ClaimSID', 'UPSID'], 'left')
+        # __logger.info(UPIard.print_count(df_claimexposure, 'df_claimreserve'))
+
+        # ClaimConstructionCurrent/ClaimConstructionX
+        df_claimexposure = df_claimexposure.join(df_claimconstructioncurrent, ['ClaimSID'], 'left').join(
+            df_claimconstructionx,
+            ['ClaimConstructionSID'], 'left')
+        # __logger.info(UPIard.print_count(df_claimexposure, 'df_claimconstructioncurrent'))
+
+        # Party names
+        df_claimexposure = df_claimexposure.join(
+            UPIard.get_party_name(df_claimparty, df_partycurrent, df_claimpartyrole, df_person), ['ClaimSID'], 'left')
+        # __logger.info(UPIard.print_count(df_claimexposure, 'df_claimparty_name'))
+
+        # User credentials
+        df_credential_usr = UPIard.get_user_cred(df_usr, df_credential, df_person)
+        df_claimexposure = df_claimexposure.join(
+            func.broadcast(df_credential_usr), df_claimexposure.AssignedUser == df_credential_usr.CredPublicID, 'left') \
+            .withColumnRenamed('UserName', 'IDGEST') \
+            .withColumnRenamed('FirstName', 'PRENOM_GEST') \
+            .withColumnRenamed('LastName', 'NOM_GEST').drop('CredPublicID')
+
+        # ----------------------------------- FINANCIAL INFO MECHANICS --------------------------------
+        # Getting coinsurance rate from: coinsuranceplan -> coinsuranceplaninsurer -> partycurrent
+        # Getting the type of the coinsurance from: claimtransactionline
+        df_coinsurancerate = UPIard.get_coinsurance_rate(df_coinsuranceplan, df_coinsuranceplaninsurer, df_partycurrent)
+
+        df_finacial_info = UPIard.get_financial_info(df_claimtransaction, df_claimtransactionline, df_claimreserve)
+
+        # TODO Implkement AgreemntSID from claim or claimcurrent
+        df_claimexposure = df_claimexposure.join(df_coinsurancerate, 'AgreementSID', 'left') \
+            .join(df_finacial_info, ['ClaimSID', 'UPSID'], 'left')
+
+        coinsuranceratecond = func.when(func.col('TYPCOASS') == 'N',
+                                        func.col('CoInsuranceRateAperitrice') / func.lit(100)).when(
+            func.col('TYPCOASS') == 'O', func.col('CoInsuranceRateSuiveuse') / func.lit(100)).otherwise(None)
+
+        df_claimexposure = UPIard.get_typcoass(df_claimexposure, df_classificationrefclaim) \
+            .withColumn('CoInsuranceRate', coinsuranceratecond)
+
+        df_claimexposure = df_claimexposure.fillna({'CoInsuranceRate': 1,
+                                                    'PaymentClaimAmount': 0,
+                                                    'FeesPaymentClaimAmount': 0,
+                                                    'ReserveClaimAmount': 0,
+                                                    'RecoveryClaimAmount': 0,
+                                                    'RecoveryReserveClaimAmount': 0,
+                                                    'Transaction': 0,
+                                                    'ReserveReportingAmount': 0,
+                                                    'PaymentReportingAmount': 0,
+                                                    'PrincipalPaymentClaimAmount': 0,
+                                                    'ReserveReportingProjectionAmount': 0})
+
+        df_claimexposure = df_claimexposure \
+            .withColumn('RECEUP', func.when(func.col('TYPCOASS') == 'N',
+                                            func.col('RecoveryClaimAmount') * func.col('CoInsuranceRate')).otherwise(
+            func.col('RecoveryClaimAmount'))) \
+            .withColumn('RGFRUP', func.when(func.col('TYPCOASS') == 'N',
+                                            func.col('FeesPaymentClaimAmount') * func.col('CoInsuranceRate')).otherwise(
+            func.col('FeesPaymentClaimAmount'))) \
+            .withColumn('RGPRUP', func.when(func.col('TYPCOASS') == 'N',
+                                            func.col('PrincipalPaymentClaimAmount') * func.col(
+                                                'CoInsuranceRate')).otherwise(func.col('PrincipalPaymentClaimAmount'))) \
+            .withColumn('EVRGUP', func.col('ReserveClaimAmount') - func.col('PaymentClaimAmount')) \
+            .withColumn('EVREUP', func.col('RecoveryReserveClaimAmount') - func.col('RecoveryClaimAmount')) \
+            .withColumn('EVRGUP_HPR',
+                        (func.col('ReserveReportingAmount') - func.col('ReserveReportingProjectionAmount')) - func.col(
+                            'PaymentClaimAmount'))
+
+        df_claimexposure = df_claimexposure \
+            .withColumn('RESNET', func.col('EVRGUP') - func.col('EVREUP')) \
+            .withColumn('REGNET', func.col('RECEUP') + func.col('RGFRUP') + func.col('RGPRUP')) \
+            .withColumn('CHG_BRT', func.col('EVRGUP') + func.col('RGFRUP') + func.col('RGPRUP')) \
+            .withColumn('CHG_CHILC',
+                        func.col('EVRGUP') - func.col('EVREUP') + func.col('RECEUP') + func.col('RGFRUP') + func.col(
+                            'RGPRUP')) \
+            .withColumn('REG_BR', func.col('RGFRUP') + func.col('RGPRUP')) \
+            .withColumn('RECEUP', func.col('RECEUP') * func.lit(-1))
+
+        # 'SRPAYMENTUP. ReserveReportingNotAdjustedAmount - SRPAYMENTUP. PaymentReportingNotAdjustedAmount
+        # __logger.info(UPIard.print_count(df_claimexposure, 'financial_synthesis'))
+        df_classificationrefclaim_code = df_classificationrefclaim.select(['classificationsid', 'obj_code'])
+        df_classificationrefclaim_1 = df_classificationrefclaim.select(['classificationsid', 'Obj_Lbl'])
+        df_classificationrefclaim = df_classificationrefclaim.select(['classificationsid', 'obj_lbll'])
+        # NEW_EVOL LIBELLE LossCauseDetailSID --> Rajout de la table df_classificationrefclaim_Libelle et jointure avec ClaimExposure
+        df_classificationrefclaim_Libelle = df_classificationrefclaim.filter(func.col('Cls_Id') == "1000506").select(['ClassificationSID', 'Obj_Lbll'])
+       
+
+        df_claimexposure = df_claimexposure.join(func.broadcast(df_classificationrefclaim),
+                                                 df_claimexposure.RoleSID == func.col('classificationsid'),
+                                                 'left').drop('classificationsid').withColumnRenamed("obj_lbll", "ROLE") \
+            .join(func.broadcast(df_classificationrefclaim_code),
+                  df_claimexposure.UPSID == func.col('classificationsid'),
+                  'left').drop('classificationsid').withColumnRenamed("obj_code", "UP") \
+            .join(func.broadcast(df_classificationrefclaim),
+                  df_claimexposure.ReserveStrategySID == func.col('classificationsid'),
+                  'left').drop('classificationsid').withColumnRenamed("obj_lbll", "EVFORF") \
+            .join(func.broadcast(df_classificationrefclaim),
+                  df_claimexposure.CircumstanceCodeSID == func.col('classificationsid'),
+                  'left').drop('classificationsid').withColumnRenamed("obj_lbll", "CDCIRC") \
+            .join(func.broadcast(df_classificationrefclaim),
+                  df_claimexposure.ClaimStatusSID == func.col('classificationsid'),
+                  'left').drop('classificationsid').withColumnRenamed("obj_lbll", "ETATSIN_OLD") \
+            .join(func.broadcast(df_classificationrefclaim),
+                  df_claimexposure.UPSID == func.col('classificationsid'),
+                  'left').drop('classificationsid').withColumnRenamed("obj_lbll", "LIBUP") \
+            .join(func.broadcast(df_classificationrefclaim),
+                  df_claimexposure.UVFamilySID == func.col('classificationsid'),
+                  'left').drop('classificationsid').withColumnRenamed("obj_lbll", "FAMUV") \
+            .join(func.broadcast(df_classificationrefclaim_Libelle),
+                  df_claimexposure.LossCauseDetailSID == func.col('ClassificationSID'),
+                  'left').drop('ClassificationSID').withColumnRenamed("Obj_Lbll","Libelle_LossCauseDetail")
+
+        # Adding reprocess reference date
+        df_claimexposure = UPIard.compute_top(df_claimexposure, df_ref)
+        # __logger.info(UPIard.print_count(df_claimexposure, 'ref_robot'))
+
+        # TODO:Change lit whe the rule is known
+        # Constant columns Columns
+        natsin_condition = (func.when(func.col('CorporalClaimFlag').isin([1]), func.lit('C'))
+                            .otherwise(func.lit('M')))
+        # TODO Ask for default otherwise status
+        etasin_condition = (func.when(func.col('ClaimStatusSID').isin([3101]), func.lit(0))
+                            .when(func.col('ClaimStatusSID').isin([3099]), func.lit(1))
+                            .when(func.col('ClaimStatusSID').isin([3098]), func.lit(3))
+                            .when(func.col('ClaimStatusSID').isin([3097]), func.lit(9))
+                            .otherwise(func.lit(3)))
+
+        closedate_condition = (func.when(func.col('is_closed').isin([1]), func.col('DTCLOTUP')).otherwise(None))
+        df_claimexposure = df_claimexposure \
+            .withColumn('CDPOSURV', func.lit('TO_DEVELOP')) \
+            .withColumn('CDREGEST', func.lit('TO_DEVELOP')) \
+            .withColumn('SAMUT', func.lit('TO_DEVELOP')) \
+            .withColumn('ETATSIN', etasin_condition) \
+            .withColumn('DTCLOTUP', closedate_condition) \
+            .withColumn('NATSIN', natsin_condition) \
+            .withColumn('DTMAJUP_AGR', func.lit(None))
+
+        # Lot 5 development
+        ## Start 
+        w_asc = Window.partitionBy('ClaimSID').orderBy(func.col('ClaimDamageSID').asc())
+
+        df_claimdamage = UPIard.dedup_satelite(df_dictionary['claimdamage'].filter(func.col('ValidityFlag') == func.lit('1')), 
+                                               'ClaimDamageSID', sort_key='tech_day', drop_sortkey=True)
+        df_damagenature = UPIard.dedup_satelite(df_dictionary['damagenature'].filter(func.col('ValidityFlag') == func.lit('1')), 
+                                                'DamageNatureSID', sort_key='tech_day', drop_sortkey=True)
+        df_damagelocation = UPIard.dedup_satelite(df_dictionary['damagelocation'].filter(func.col('ValidityFlag') == func.lit('1')), 
+                                                  'DamageLocationSID', sort_key='tech_day', drop_sortkey=True)
+
+        df_damage = df_claimdamage.where((func.col('damageNatureSID')>0) & (func.col('damageLocationSID')>0)).\
+        join(df_damagenature.alias('dn'), on = ['damageNatureSID'], how='left').\
+        join(df_damagelocation.alias('dl'), on = ['damageLocationSID'], how='left').\
+        select('claimSID', func.col('DamageLossCause').alias('DES_LIB'), func.col('dn.Description').alias('DES_NAT'), 
+        func.col('dl.Description').alias('DES_LOC'), func.row_number().over(w_asc).alias('row_order')).\
+        where(func.col('row_order')<=3).groupBy("ClaimSID").pivot("row_order").\
+        agg(func.first('DES_LIB'), func.first('DES_NAT'), func.first('DES_LOC')).\
+        toDF(*['ClaimSID', 'DES_LIB_1', 'DES_NAT_1', 'DES_LOC_1', 'DES_LIB_2', 'DES_NAT_2', 
+        'DES_LOC_2', 'DES_LIB_3', 'DES_NAT_3', 'DES_LOC_3'])
+
+        w_desc = Window.partitionBy('ClaimSID').orderBy(func.col('PartySID').desc())
+
+        df_ref_agent = df_claimparty.join(df_partycurrent.\
+        where((func.col('AgentInFunctionFlag')==1) & (func.col('Reference').isNotNull())), on = ['PartySID'], 
+        how = 'inner').select('ClaimSID', func.col('Reference').alias('REF_DIST'), 
+        func.row_number().over(w_desc).alias('row_order')).where(func.col('row_order')==1).drop('row_order')
+
+        df_agreementconstructioncurrent = UPIard.dedup_satelite(df_dictionary['agreementconstructioncurrent'].\
+                                                                filter(func.col('ValidityFlag') == func.lit('1')), 
+                                          'AgreementConstructionSID', sort_key='tech_day', drop_sortkey=True)
+        df_claimautocurrent = UPIard.dedup_satelite(df_dictionary['claimautocurrent'].\
+                                                    filter(func.col('ValidityFlag') == func.lit('1')), 
+                              'ClaimSID', sort_key='tech_day', drop_sortkey=True)
+
+        w_desc_1 = Window.partitionBy('ClaimSID').orderBy(func.col('PostalAddressID').desc())
+
+        df_address = df_claimcurrent.select('claimSID', 'losslocationsid').alias('claimcur').\
+        join(df_postaladdress.alias('PA'), func.col('claimcur.losslocationsid') == func.col('PA.postaladdresssid'), 
+        how='left').join(df_classificationrefclaim.select('ClassificationSID', 'Obj_Lbll').alias('REFINSUR2'), 
+        func.col('PA.CountrySID') == func.col('REFINSUR2.ClassificationSID'), how='left').\
+        select('ClaimSID', func.concat_ws(' ', 'PA.addressline1', 'PA.addressline2', 'PA.addressline3', 
+        'PA.addressline4').alias('ADRESSURV'), func.col('REFINSUR2.Obj_Lbll').alias('PAYSSURV'), 
+        func.row_number().over(w_desc_1).alias('row_order')).where(func.col('row_order')==1).drop('row_order')
+
+        df_lot5 = df_claim.select('ClaimSID').join(df_claimcurrent.alias('claimcur'), on = ['ClaimSID'], how='left').\
+                join(df_address, on = ['ClaimSID'], how='left').\
+                join(df_claimautocurrent, on = ['ClaimSID'], how='left').join(df_classificationrefclaim.alias('REFINSUR1'),
+                func.col('REFINSUR1.classificationsid') == func.col('CircumstanceCodeSID'), how='left').\
+                join(df_claimconstructioncurrent.alias('CCC'), on = ['ClaimSID'], how='left').\
+                join(df_claimconstructionx.alias('CCx'), on = ['claimconstructionsid'], how='left').\
+                join(df_agreementconstructioncurrent.alias('ACC'), on = ['agreementconstructionsid'], how='left').\
+                join(df_damage, on = ['ClaimSID'], how ='left').join(df_ref_agent, on = ['ClaimSID'], how = 'left').\
+                select(func.col('claimcur.description').alias('CIRCONST_DESC'), 
+                func.col('IRSALicensePlateIP').alias('IMMAT'), 'ClaimSID', func.col('ACC.constructiontext').alias('COD_CHANT'),
+                'ADRESSURV', 'PAYSSURV', 'DES_LIB_1', 'DES_NAT_1', 'DES_LOC_1', 'DES_LIB_2', 
+                'DES_NAT_2', 'DES_LOC_2', 'DES_LIB_3', 'DES_NAT_3', 'DES_LOC_3', 'REF_DIST').drop_duplicates()
+
+        df_claimexposure = df_claimexposure.join(df_lot5, on = ['ClaimSID'], how = 'left')
+
+        #Ajout des taux TX_RC & TX_CONV_IRSA
+        df_claimautocurrent = UPIard.dedup_satelite(df_dictionary['claimautocurrent'].\
+                                                    filter((func.col('validityflag') == '1') &
+                                                           (func.col('claimautosid').isNotNull())),
+                              'ClaimSID', sort_key='EffectivePeriodStartDate', drop_sortkey=True)
+
+        df_claimautox = UPIard.dedup_satelite(df_dictionary['claimautox'].\
+                                              filter((func.col("validityflag") == '1') &
+                                                     (func.col("insuredRCRateSID").isNotNull()) &
+                                                     (func.col('claimautosid').isNotNull())), 'claimautosid',
+                                              sort_key='EffectivePeriodStartDate')
+
+        df_accidentreport = UPIard.dedup_satelite(UPIard.dedup_satelite(df_dictionary['accidentreport'], 'accidentreportSID',
+                                               sort_key='EffectivePeriodStartDate', drop_sortkey=False), 'ClaimSID',
+                                                  sort_key='EffectivePeriodStartDate')
+
+        df_accidentdiagram = UPIard.dedup_satelite(df_dictionary['accidentdiagram'], 'AccidentDiagramSID',
+                                              sort_key='EffectivePeriodStartDate')
+
+        taux_rc = df_claimautocurrent.alias("CAC") \
+            .join(df_claimautox.alias("CX"), ["claimautosid"], how='inner') \
+            .join(df_classificationrefclaim_1.alias("REFINSUR"),
+                  func.col("CX.insuredRCRateSID") == func.col("REFINSUR.classificationsid"), how='inner') \
+            .select('CAC.ClaimSID', func.coalesce(func.col('REFINSUR.Obj_Lbl'), func.lit('')).alias("TX_RC"))
+
+        tx_conv_irsa = df_accidentreport.alias("AR") \
+            .join(df_accidentdiagram.alias("AD"), ['AccidentDiagramSID'],
+                  how='inner') \
+            .join(df_classificationrefclaim_1.alias("REF"),
+                  func.col("REF.ClassificationSID") == func.col("AD.BlueCarFaultPercentageSID"),
+                  how='inner').select('claimsid',
+                                      func.coalesce(func.col("REF.Obj_Lbl"), func.lit('')).alias("TX_CONV_IRSA"))
+
+        df_tx = taux_rc.join(tx_conv_irsa, on=['claimsid'], how='full').select('claimsid', 'TX_RC', 'TX_CONV_IRSA')
+        df_claimexposure = df_claimexposure.join(df_tx, on=['claimsid'], how='left')
+        
+        ## end
+        df_claimexposure = UPIard.override_etatup(df_claimexposure)
+        df_claimexposure = UPIard.override_etatsin(df_claimexposure)
+
+        # Change columns format and rename
+        df_claimexposure = misc.round_decimal(df_claimexposure, 4)
+        df_claimexposure = misc.rename_df(df_claimexposure, UPIard.G_OUTPUT_RENAME_COL_DICT).select(UPIard.G_OUTPUT_COL)
+        df_claimexposure = df_claimexposure.withColumn('LOAD_DATE', func.lit(ref_date).cast(StringType()))
+        df_claimexposure = misc.timestamp_to_date(df_claimexposure)
+        df_claimexposure = misc.string_to_double(df_claimexposure, UPIard.G_CAST_LACKING_COL)
+        df_claimexposure = df_claimexposure.withColumn('flag', func.lit('DTW'))
+        df_claimexposure = df_claimexposure.withColumn('TX_COASS', 
+                        func.when(func.col('TX_COASS') > 1, func.col('TX_COASS') / 100)
+                               .otherwise(func.col('TX_COASS')))
+
+        return df_claimexposure
