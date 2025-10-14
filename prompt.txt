@@ -1,0 +1,18 @@
+En tant qu'expert en power bi et en RLS, je veux que tu m'aides à développer les bonnes RLS pour le modèle suivant ;
+
+Table transactionnelle :bv_a2p qui contient les colonnes suivantes : annee, numéro_contrat, etc...
+d'autres tables dimentionnelles comme calendrier, dim_contrat, etc... comme tu peux le voir sur le schéma
+
+j'ai des tables RLS :
+ DIM_AGENT qui a une relation de 1 à n avec la table a2posecuriteagent ( qui contient les données importantes EMAIl_GAD,ID_PTF (identifiant portefeuille))
+
+a2posecuriteagent qui filtre securite_contrat de * à * via la clé identifiant portefeuille ( car un contrat peut être par plusieurs agents..)
+a2posecuriteagent qui filtre en double directionnel la table DIM_PORTEFEUILLE (* à 1)  : j'ai mis la dim_portefeuille pour pouvoir mettre un filtre portfeuille sur mon rapport de manière à ce que les agents ne puissent filtrer que sur leurs portfeuilles
+
+
+securite_contrat filtre 1 à * la table transactionnelle bv_a2p via la clé numéro_contrat
+
+securite_contrat  filtre aussi dim_client en bidirectionnel entre de * à 1 via la clé personne afin d'avoir par la suite un filtre Client pour que l'agent filtre ses client
+
+
+Mais le problème c'est que les RLS ne fonctionnent pas quand je les parametre (voir l'image)
