@@ -1,0 +1,92 @@
+Première mesure :
+Total Investi_10ans = 
+-SUMX ( 
+    FILTER('bv_a2p',
+    ('bv_a2p'[montant_mouvement] < 0 
+    && bv_a2p[type_mouvement] <> "PM FIN D'ANNEE" )
+    )
+     , 'bv_a2p'[montant_mouvement] )
+#####################################
+     deuxième mesure :
+     Total Retrait_10 ans = 
+ SUMX (
+     FILTER
+     ('bv_a2p',
+      'bv_a2p'[montant_mouvement] > 0
+      && bv_a2p[type_mouvement] <> "PM FIN D'ANNEE")
+      , 'bv_a2p'[montant_mouvement] )
+#################################################################
+      Troisièpme mesure : 
+      PM_DEBUT_ANNEE_BIS = 
+VAR HasYearFilter   = ISFILTERED ( 'Calendrier'[Année] )
+VAR SelectedMinYear = IF ( HasYearFilter, MIN ( 'Calendrier'[Année] ) )
+/* Année de début réelle du contrat dans le contexte courant */
+VAR ContractStartYear =
+   CALCULATE (
+       MINX (
+           FILTER ( ALL ( 'bv_a2p' ),
+               'bv_a2p'[type_mouvement] = "PM DEBUT ANNEE"
+           ),
+           YEAR ( 'bv_a2p'[date_de_valorisation] )
+       ),
+       /* on garde le contexte contrat, remplace par la dim contrat si tu l’as */
+       ALLEXCEPT ( 'bv_a2p', 'bv_a2p'[numero_contrat] )
+   )
+/* Si filtre d'années → on prend le plus tardif des deux.
+  Sinon → on prend l’année de début réelle du contrat. */
+VAR TargetYear =
+   IF ( HasYearFilter,
+        MAX ( SelectedMinYear, ContractStartYear ),
+        ContractStartYear
+   )
+VAR EndDate = DATE ( TargetYear, 1, 1 )        -- PM début = 01/01/TargetYear
+RETURN
+-CALCULATE (
+   SUM ( 'bv_a2p'[montant_mouvement] ),
+   'bv_a2p'[type_mouvement] = "PM DEBUT ANNEE",
+   /* on isole la date cible, on neutralise le slicer Calendrier */
+   REMOVEFILTERS ( 'Calendrier'[Date] ),
+   TREATAS ( { EndDate }, 'Calendrier'[Date] )
+)
+Quatrième mesure ; 
+PM_FIN_ANNEE = 
+VAR HasYearFilter =
+   ISFILTERED ( 'Calendrier'[Année] )
+/* Année cible :
+  - si filtre actif : année max sélectionnée
+  - sinon : dernière année (pour le contrat courant) où il existe une PM FIN D'ANNEE
+*/
+VAR TargetYear =
+   IF (
+       HasYearFilter,
+       MAX ( 'Calendrier'[Année] ),
+       CALCULATE (
+           MAXX (
+               FILTER ( 'bv_a2p', 'bv_a2p'[type_mouvement] = "PM FIN ANNEE" ),
+               YEAR ( 'bv_a2p'[date_de_valorisation] )
+    
+           ),
+           REMOVEFILTERS ( 'Calendrier' )   -- on ignore le slicer Année s'il n'est pas utilisé
+       )
+   )
+VAR EndDate = DATE ( TargetYear, 12, 31 )
+RETURN
+CALCULATE (
+   SUM ( 'bv_a2p'[montant_mouvement] ),
+   'bv_a2p'[type_mouvement] = "PM FIN ANNEE",
+   /* force uniquement le 31/12 de l'année retenue */
+   REMOVEFILTERS ( 'Calendrier'[Date] ),
+   TREATAS ( { EndDate }, 'Calendrier'[Date] )
+)
+
+##################
+Cinquième mesure  :
+TRI % = 
+
+CALCULATE(
+    XIRR(
+        'bv_a2p',
+        'bv_a2p'[montant_mouvement],
+        'bv_a2p'[date_de_valorisation],,BLANK()
+    )
+)
