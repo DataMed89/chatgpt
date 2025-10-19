@@ -1,23 +1,36 @@
 
 Total Investi_10ans :=
 VAR HasYearFilter = ISFILTERED ( 'Calendrier'[Année] )
-VAR DataMaxDate   = CALCULATE ( MAX ( 'bv_a2p'[date_de_valorisation] ), REMOVEFILTERS ( 'Calendrier' ) )
-VAR StartDate     = DATE ( YEAR ( DataMaxDate ) - 9, 1, 1 )
 
-/* Par défaut : ignorer tout filtre Calendrier puis imposer la fenêtre 10 ans */
+/* Ancrage sur aujourd’hui (année courante) */
+VAR TodayDate   = TODAY()
+VAR StartDate   = DATE ( YEAR ( TodayDate ) - 9, 1, 1 )
+
+/* Par défaut : ignorer tout filtre calendrier puis imposer la fenêtre 10 ans */
 VAR BaseDefault :=
     CALCULATE (
         - SUM ( 'bv_a2p'[montant_mouvement] ),
         'bv_a2p'[montant_mouvement] < 0,
         'bv_a2p'[type_mouvement] = "VERSEMENT",
         REMOVEFILTERS ( 'Calendrier' ),
-        DATESBETWEEN ( 'Calendrier'[Date], StartDate, DataMaxDate )
+        DATESBETWEEN ( 'Calendrier'[Date], StartDate, TodayDate )
     )
+
+/* Si l'utilisateur filtre l’Année, on respecte le contexte courant */
+VAR WithFilter :=
+    CALCULATE (
+        - SUM ( 'bv_a2p'[montant_mouvement] ),
+        'bv_a2p'[montant_mouvement] < 0,
+        'bv_a2p'[type_mouvement] = "VERSEMENT"
+    )
+
+RETURN IF ( HasYearFilter, WithFilter, BaseDefault )
 
 Total Retrait_10ans :=
 VAR HasYearFilter = ISFILTERED ( 'Calendrier'[Année] )
-VAR DataMaxDate   = CALCULATE ( MAX ( 'bv_a2p'[date_de_valorisation] ), REMOVEFILTERS ( 'Calendrier' ) )
-VAR StartDate     = DATE ( YEAR ( DataMaxDate ) - 9, 1, 1 )
+
+VAR TodayDate = TODAY()
+VAR StartDate = DATE ( YEAR ( TodayDate ) - 9, 1, 1 )
 
 VAR BaseDefault :=
     CALCULATE (
@@ -25,7 +38,7 @@ VAR BaseDefault :=
         'bv_a2p'[montant_mouvement] > 0,
         'bv_a2p'[type_mouvement] <> "RACHAT",   -- ajuste si besoin
         REMOVEFILTERS ( 'Calendrier' ),
-        DATESBETWEEN ( 'Calendrier'[Date], StartDate, DataMaxDate )
+        DATESBETWEEN ( 'Calendrier'[Date], StartDate, TodayDate )
     )
 
 VAR WithFilter :=
@@ -34,19 +47,8 @@ VAR WithFilter :=
         'bv_a2p'[montant_mouvement] > 0,
         'bv_a2p'[type_mouvement] <> "RACHAT"
     )
+
 RETURN IF ( HasYearFilter, WithFilter, BaseDefault )
-
-
-
-/* Si l'utilisateur filtre l'Année, on respecte 100% du contexte courant */
-VAR WithFilter :=
-    CALCULATE (
-        - SUM ( 'bv_a2p'[montant_mouvement] ),
-        'bv_a2p'[montant_mouvement] < 0,
-        'bv_a2p'[type_mouvement] = "VERSEMENT"
-    )
-RETURN IF ( HasYearFilter, WithFilter, BaseDefault )
-
 
 
 PM_FIN_ANNEE_10Y_DEFAULT :=
