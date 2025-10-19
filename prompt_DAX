@@ -1,60 +1,64 @@
 PM_FIN_ANNEE_10Y_DEFAULT :=
-VAR HasYearFilter = ISFILTERED ( 'Calendrier'[Année] )
+VAR HasYearFilter = ISFILTERED('Calendrier'[Année])
 
-/* Dernière date et année réellement présentes dans les données */
+/* borne max réelle dans les données */
 VAR DataMaxDate =
-    CALCULATE ( MAX ( 'bv_a2p'[date_de_valorisation] ), REMOVEFILTERS ( 'Calendrier' ) )
+    CALCULATE ( MAX ( 'bv_a2p'[date_de_valorisation] ), REMOVEFILTERS('Calendrier') )
 VAR DataMaxYear = YEAR ( DataMaxDate )
 
-/* Par défaut : les 10 dernières années jusqu'à DataMaxYear */
-VAR YearsDefault =
-    CALCULATETABLE (
-        FILTER (
-            VALUES ( 'Calendrier'[Année] ),
-            'Calendrier'[Année] >= DataMaxYear - 9
-                && 'Calendrier'[Année] <= DataMaxYear
-        ),
-        REMOVEFILTERS ( 'Calendrier' )
+/* TABLE des années sélectionnées (si filtre posé) */
+VAR _sel =
+    SELECTCOLUMNS( VALUES('Calendrier'[Année]), "Y", 'Calendrier'[Année] )
+
+/* TABLE par défaut = 10 dernières années jusqu'à DataMaxYear */
+VAR _def =
+    CALCULATETABLE(
+        SELECTCOLUMNS( VALUES('Calendrier'[Année]), "Y", 'Calendrier'[Année] ),
+        FILTER( ALL('Calendrier'[Année]),
+            'Calendrier'[Année] >= DataMaxYear - 9 &&
+            'Calendrier'[Année] <= DataMaxYear
+        )
     )
 
-/* Si filtre actif → on prend les années filtrées, sinon les 10 dernières */
+/* Choix de la table, sans IF-table */
 VAR YearsToScan =
-    IF ( HasYearFilter, VALUES ( 'Calendrier'[Année] ), YearsDefault )
+    UNION(
+        FILTER( _sel, HasYearFilter ),          /* garde _sel si filtre actif, vide sinon */
+        FILTER( _def, NOT HasYearFilter )       /* garde _def si pas de filtre, vide sinon */
+    )
 
-/* Somme année par année selon la règle demandée */
-VAR Result :=
-    SUMX (
+/* Itération année par année */
+VAR Result =
+    SUMX(
         YearsToScan,
-        VAR Y = 'Calendrier'[Année]
+        VAR Y = [Y]
         VAR TargetDate =
-            IF (
+            IF(
                 Y < DataMaxYear,
-                DATE ( Y, 12, 31 ),
-                CALCULATE (
-                    MAX ( 'bv_a2p'[date_de_valorisation] ),
-                    REMOVEFILTERS ( 'Calendrier'[Date] ),
-                    YEAR ( 'bv_a2p'[date_de_valorisation] ) = Y
+                DATE(Y,12,31),
+                CALCULATE(
+                    MAX('bv_a2p'[date_de_valorisation]),
+                    REMOVEFILTERS('Calendrier'[Date]),
+                    YEAR('bv_a2p'[date_de_valorisation]) = Y
                 )
             )
         RETURN
-            IF (
-                NOT ISBLANK ( TargetDate ),
-                CALCULATE (
-                    SUM ( 'bv_a2p'[montant_mouvement] ),
-                    /* type de PM selon l'année */
-                    IF (
+            IF(
+                NOT ISBLANK(TargetDate),
+                CALCULATE(
+                    SUM('bv_a2p'[montant_mouvement]),
+                    IF(
                         Y < DataMaxYear,
                         'bv_a2p'[type_mouvement] = "PM FIN ANNEE",
                         'bv_a2p'[type_mouvement] IN { "PM FIN ANNEE", "PM" }
                     ),
-                    /* on force la date cible */
-                    REMOVEFILTERS ( 'Calendrier'[Date] ),
-                    TREATAS ( { TargetDate }, 'Calendrier'[Date] )
+                    REMOVEFILTERS('Calendrier'[Date]),
+                    TREATAS( { TargetDate }, 'Calendrier'[Date] )
                 )
             )
     )
-RETURN
-    Result
+RETURN Result
+
 
 PM_FIN_ANNEE = 
 VAR HasYearFilter =
