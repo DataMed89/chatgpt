@@ -17,7 +17,6 @@ Total Retrait_10 ans =
 
 
 
-
 PM_FIN_ANNEE_10Y_DEFAULT :=
 VAR HasYearFilter = ISFILTERED('Calendrier'[Année])
 
