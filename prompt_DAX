@@ -1,4 +1,60 @@
+PM_FIN_ANNEE_10Y_DEFAULT :=
+VAR HasYearFilter = ISFILTERED ( 'Calendrier'[Année] )
 
+/* Dernière date et année réellement présentes dans les données */
+VAR DataMaxDate =
+    CALCULATE ( MAX ( 'bv_a2p'[date_de_valorisation] ), REMOVEFILTERS ( 'Calendrier' ) )
+VAR DataMaxYear = YEAR ( DataMaxDate )
+
+/* Par défaut : les 10 dernières années jusqu'à DataMaxYear */
+VAR YearsDefault =
+    CALCULATETABLE (
+        FILTER (
+            VALUES ( 'Calendrier'[Année] ),
+            'Calendrier'[Année] >= DataMaxYear - 9
+                && 'Calendrier'[Année] <= DataMaxYear
+        ),
+        REMOVEFILTERS ( 'Calendrier' )
+    )
+
+/* Si filtre actif → on prend les années filtrées, sinon les 10 dernières */
+VAR YearsToScan =
+    IF ( HasYearFilter, VALUES ( 'Calendrier'[Année] ), YearsDefault )
+
+/* Somme année par année selon la règle demandée */
+VAR Result :=
+    SUMX (
+        YearsToScan,
+        VAR Y = 'Calendrier'[Année]
+        VAR TargetDate =
+            IF (
+                Y < DataMaxYear,
+                DATE ( Y, 12, 31 ),
+                CALCULATE (
+                    MAX ( 'bv_a2p'[date_de_valorisation] ),
+                    REMOVEFILTERS ( 'Calendrier'[Date] ),
+                    YEAR ( 'bv_a2p'[date_de_valorisation] ) = Y
+                )
+            )
+        RETURN
+            IF (
+                NOT ISBLANK ( TargetDate ),
+                CALCULATE (
+                    SUM ( 'bv_a2p'[montant_mouvement] ),
+                    /* type de PM selon l'année */
+                    IF (
+                        Y < DataMaxYear,
+                        'bv_a2p'[type_mouvement] = "PM FIN ANNEE",
+                        'bv_a2p'[type_mouvement] IN { "PM FIN ANNEE", "PM" }
+                    ),
+                    /* on force la date cible */
+                    REMOVEFILTERS ( 'Calendrier'[Date] ),
+                    TREATAS ( { TargetDate }, 'Calendrier'[Date] )
+                )
+            )
+    )
+RETURN
+    Result
 
 PM_FIN_ANNEE = 
 VAR HasYearFilter =
