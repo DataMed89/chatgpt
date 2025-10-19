@@ -1,54 +1,55 @@
 
+Total versement (fast) :=
+CALCULATE (
+    - SUM ( 'bv_a2p'[montant_mouvement] ),
+    KEEPFILTERS ( 'bv_a2p'[montant_mouvement] < 0 ),
+    KEEPFILTERS ( 'bv_a2p'[type_mouvement] = "VERSEMENT" )
+)
+
+Total retrait (fast) :=
+CALCULATE (
+    SUM ( 'bv_a2p'[montant_mouvement] ),
+    KEEPFILTERS ( 'bv_a2p'[montant_mouvement] > 0 ),
+    KEEPFILTERS ( 'bv_a2p'[type_mouvement] <> "RACHAT" )
+)
+
+
 Total Investi_10ans :=
 VAR HasYearFilter = ISFILTERED ( 'Calendrier'[Année] )
-
-/* Ancrage sur aujourd’hui (année courante) */
-VAR TodayDate   = TODAY()
-VAR StartDate   = DATE ( YEAR ( TodayDate ) - 9, 1, 1 )
-
-/* Par défaut : ignorer tout filtre calendrier puis imposer la fenêtre 10 ans */
-VAR BaseDefault :=
+VAR TodayDate     = TODAY()
+VAR StartDate     = DATE ( YEAR ( TodayDate ) - 9, 1, 1 )
+RETURN
+IF (
+    HasYearFilter,
+    [Total versement (fast)],
     CALCULATE (
-        - SUM ( 'bv_a2p'[montant_mouvement] ),
-        'bv_a2p'[montant_mouvement] < 0,
-        'bv_a2p'[type_mouvement] = "VERSEMENT",
+        [Total versement (fast)],
         REMOVEFILTERS ( 'Calendrier' ),
-        DATESBETWEEN ( 'Calendrier'[Date], StartDate, TodayDate )
+        'bv_a2p'[date_de_valorisation] >= StartDate,
+        'bv_a2p'[date_de_valorisation] <= TodayDate
     )
+)
 
-/* Si l'utilisateur filtre l’Année, on respecte le contexte courant */
-VAR WithFilter :=
-    CALCULATE (
-        - SUM ( 'bv_a2p'[montant_mouvement] ),
-        'bv_a2p'[montant_mouvement] < 0,
-        'bv_a2p'[type_mouvement] = "VERSEMENT"
-    )
-
-RETURN IF ( HasYearFilter, WithFilter, BaseDefault )
+***********
 
 Total Retrait_10ans :=
 VAR HasYearFilter = ISFILTERED ( 'Calendrier'[Année] )
-
-VAR TodayDate = TODAY()
-VAR StartDate = DATE ( YEAR ( TodayDate ) - 9, 1, 1 )
-
-VAR BaseDefault :=
+VAR TodayDate     = TODAY()
+VAR StartDate     = DATE ( YEAR ( TodayDate ) - 9, 1, 1 )
+RETURN
+IF (
+    HasYearFilter,
+    [Total retrait (fast)],
     CALCULATE (
-        SUM ( 'bv_a2p'[montant_mouvement] ),
-        'bv_a2p'[montant_mouvement] > 0,
-        'bv_a2p'[type_mouvement] <> "RACHAT",   -- ajuste si besoin
+        [Total retrait (fast)],
         REMOVEFILTERS ( 'Calendrier' ),
-        DATESBETWEEN ( 'Calendrier'[Date], StartDate, TodayDate )
+        'bv_a2p'[date_de_valorisation] >= StartDate,
+        'bv_a2p'[date_de_valorisation] <= TodayDate
     )
+)
 
-VAR WithFilter :=
-    CALCULATE (
-        SUM ( 'bv_a2p'[montant_mouvement] ),
-        'bv_a2p'[montant_mouvement] > 0,
-        'bv_a2p'[type_mouvement] <> "RACHAT"
-    )
 
-RETURN IF ( HasYearFilter, WithFilter, BaseDefault )
+
 
 
 PM_FIN_ANNEE_10Y_DEFAULT :=
