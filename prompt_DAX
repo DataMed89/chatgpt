@@ -1,4 +1,35 @@
 
+TRI %_10ans = 
+VAR _cy     = YEAR ( TODAY() )
+VAR _start  = DATE ( _cy - 9, 1, 1 )
+VAR _end    = DATE ( _cy,     12, 31 )
+RETURN
+CALCULATE (
+   XIRR (
+       'bv_a2p',
+       'bv_a2p'[montant_mouvement],
+       'bv_a2p'[date_de_valorisation],,BLANK()
+   ),
+   REMOVEFILTERS ( 'Calendrier'[Date] ),
+   DATESBETWEEN ( 'Calendrier'[Date], _start, _end )
+)
+###############################
+TRI %_5ans = 
+VAR _cy     = YEAR ( TODAY() )
+VAR _start  = DATE ( _cy - 4, 1, 1 )
+VAR _end    = DATE ( _cy,     12, 31 )
+RETURN
+CALCULATE (
+   XIRR (
+       'bv_a2p',
+       'bv_a2p'[montant_mouvement],
+       'bv_a2p'[date_de_valorisation],,BLANK()
+   ),
+   REMOVEFILTERS ( 'Calendrier'[Date] ),
+   DATESBETWEEN ( 'Calendrier'[Date], _start, _end )
+)
+#######################################
+
 Total versement (fast) :=
 CALCULATE (
     - SUM ( 'bv_a2p'[montant_mouvement] ),
