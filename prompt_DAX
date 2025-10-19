@@ -1,18 +1,33 @@
 
-TRI %_10ans = 
-VAR _cy     = YEAR ( TODAY() )
-VAR _start  = DATE ( _cy - 9, 1, 1 )
-VAR _end    = DATE ( _cy,     12, 31 )
+
+-- TRI % sur 10 ans (fenêtre glissante depuis 01/01/(année courante - 9) jusqu’à aujourd’hui)
+TRI %_10ans (fast) :=
+VAR _today  = TODAY()
+VAR _start  = DATE( YEAR(_today) - 9, 1, 1 )
 RETURN
-CALCULATE (
-   XIRR (
-       'bv_a2p',
-       'bv_a2p'[montant_mouvement],
-       'bv_a2p'[date_de_valorisation],,BLANK()
-   ),
-   REMOVEFILTERS ( 'Calendrier'[Date] ),
-   DATESBETWEEN ( 'Calendrier'[Date], _start, _end )
+CALCULATE(
+    XIRR( 'bv_a2p', 'bv_a2p'[montant_mouvement], 'bv_a2p'[date_de_valorisation], , BLANK() ),
+    REMOVEFILTERS( 'Calendrier' ),
+    'bv_a2p'[date_de_valorisation] >= _start,
+    'bv_a2p'[date_de_valorisation] <= _today
 )
+
+Rang TRI 10 ans :=
+RANKX(
+    ALL( DimContrat[NumContrat] ),
+    [TRI %_10ans (fast)],
+    ,
+    DESC,
+    DENSE
+)
+
+TRI % Top5 (10 ans) :=
+VAR _tri = [TRI %_10ans (fast)]
+VAR _rk  = [Rang TRI 10 ans]
+RETURN IF( NOT ISBLANK(_tri) && _rk <= 5, _tri )
+
+
+
 ###############################
 TRI %_5ans = 
 VAR _cy     = YEAR ( TODAY() )
