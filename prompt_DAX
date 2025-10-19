@@ -1,3 +1,41 @@
+
+
+PM_FIN_ANNEE = 
+VAR HasYearFilter =
+   ISFILTERED ( 'Calendrier'[Année] )
+/* Année cible :
+  - si filtre actif : année max sélectionnée
+  - sinon : dernière année (pour le contrat courant) où il existe une PM FIN D'ANNEE
+*/
+VAR TargetYear =
+   IF (
+       HasYearFilter,
+       MAX ( 'Calendrier'[Année] ),
+       CALCULATE (
+           MAXX (
+               FILTER ( 'bv_a2p', 'bv_a2p'[type_mouvement] = "PM FIN ANNEE" ),
+               YEAR ( 'bv_a2p'[date_de_valorisation] )
+           ),
+           REMOVEFILTERS ( 'Calendrier' )   -- on ignore le slicer Année s'il n'est pas utilisé
+       )
+   )
+VAR EndDate = DATE ( TargetYear, 12, 31 )
+RETURN
+CALCULATE (
+   SUM ( 'bv_a2p'[montant_mouvement] ),
+   'bv_a2p'[type_mouvement] = "PM FIN ANNEE",
+   /* force uniquement le 31/12 de l'année retenue */
+   REMOVEFILTERS ( 'Calendrier'[Date] ),
+   TREATAS ( { EndDate }, 'Calendrier'[Date] )
+)
+
+
+
+
+
+
+
+
 Première mesure :
 Total Investi_10ans = 
 -SUMX ( 
