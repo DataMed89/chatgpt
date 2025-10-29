@@ -1,3 +1,15 @@
+
+écris moi un code pour un algorithme de trading automatique sur Tradingview qui va utiliser la classification de LORENTZIAN
+en combinant les 7 dimensions suivantes :
+1) Liquidité
+2) Prix
+3) Volume
+4) Temps
+5) Momentum
+6) Volatilité
+7) Valeur
+
+
 VAR CurrUser = USERPRINCIPALNAME()
 
 VAR PTFListGAD =
@@ -37,3 +49,4 @@ securite_contrat  filtre aussi dim_client en bidirectionnel entre de * à 1 via 
 
 
 Mais le problème c'est que les RLS ne fonctionnent pas quand je les parametre (voir l'image)
+
