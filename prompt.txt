@@ -49,4 +49,93 @@ securite_contrat  filtre aussi dim_client en bidirectionnel entre de * à 1 via 
 
 
 Mais le problème c'est que les RLS ne fonctionnent pas quand je les parametre (voir l'image)
+############################################################################################################
+#######################################################################################################################
+
+Sachant que la colonne montant_mouvement, est de type nombre décimal 
+j'aimerais que les mesures suivantes m'affichent des nombres entiers complets au lieu d'afficher des nombres comme 35K , je veux 35767 eur (avec signe euros)
+il faut aussi tenir compte  qu'il y a une mesure qui est la somme des deux autres que tu verras dans le dax code donc à à prendre en compte pour la stratégie globale
+
+1 ere mesure (nom fonctionnel Encours) :
+PM_FIN_ANNEE_FILTER = 
+
+VAR HasYearFilter   = ISFILTERED ( 'Calendrier'[Année] )
+
+VAR TodayDate       = [Endate]
+
+VAR StartDefault    = [Startdate]
+
+/* 1) Dernière date de 'PM FIN ANNEE' selon le mode */
+
+VAR LastPMDate =
+
+  
+        CALCULATE (
+
+            MAX ( 'bv_a2p'[date_de_valorisation] ),
+
+            KEEPFILTERS ( 'bv_a2p'[type_mouvement] = "PM FIN ANNEE" )
+
+        )
+
+/* 2) Somme des seules PM de cette dernière date */
+
+RETURN
+
+IF (
+
+    NOT ISBLANK ( LastPMDate ),
+
+    CALCULATE (
+
+        SUM ( 'bv_a2p'[montant_mouvement] ),
+
+        'bv_a2p'[type_mouvement] = "PM FIN ANNEE",
+
+        'bv_a2p'[date_de_valorisation] = LastPMDate
+
+    )
+
+)
+
+2ème mesure (nom fonctionnel : Versements nets)
+TOTAL_VERSEMENTS_FILTER = 
+
+VAR StartDate     = DATE([Startdate],1,1)
+VAR EndDate     = DATE ([Endate],12,31 )
+
+VAR Result = 
+-SUMX ( 
+    FILTER('bv_a2p',
+    ('bv_a2p'[montant_mouvement] < 0 
+    && bv_a2p[type_mouvement] = "VERSEMENT" 
+    && bv_a2p[date_de_valorisation] >= StartDate 
+    && bv_a2p[date_de_valorisation] <= EndDate )
+    ) , 'bv_a2p'[montant_mouvement] )
+RETURN 
+IF(Result == BLANK(), 0,Result)
+3ème mesure (Rachats brut)
+TOTAL_RETRAIT_FILTER = 
+VAR StartDate     = DATE([Startdate],1,1)
+VAR EndDate     = DATE ([Endate],12,31 )
+
+
+VAR  RESULT = SUMX (
+     FILTER('bv_a2p',
+      'bv_a2p'[montant_mouvement] > 0
+      && bv_a2p[type_mouvement] = "RACHAT" && 
+      'bv_a2p'[date_de_valorisation] >= StartDate &&
+       'bv_a2p'[date_de_valorisation] <= EndDate),
+      'bv_a2p'[montant_mouvement])
+RETURN
+IF (RESULT ==BLANK(), 0, RESULT)
+
+4ème mesure (somme des deux autres, nom somme des mouvements
+[TOTAL_VERSEMENTS_FILTER] - [TOTAL_RETRAIT_FILTER]
+
+
+ 
+
+
+
 
