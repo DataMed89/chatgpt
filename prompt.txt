@@ -133,8 +133,33 @@ IF (RESULT ==BLANK(), 0, RESULT)
 4ème mesure (somme des deux autres, nom somme des mouvements
 [TOTAL_VERSEMENTS_FILTER] - [TOTAL_RETRAIT_FILTER]
 
+###########################################################################################################################################################################
+############################################################################################################################################################################
+Je voudrais que tu prennes le double rôle d'un expert en actuariat et en Data 
+Sachant que le projet en cours est un projet de BI pour calculer les indicateurs de la performance d'un portefeuille client sur les produits assurance vie ( Versements, Rachats, TRI (taux de rendement interne) etc...)
+Voici le fichier excel issu d'un atelier avec le métier pour catégoriser les actes(flux) en flux sortant, fluant entrant, et savoir si oui ou non ces actes rentrent dans le calcul de la PM (provision mathématique)
+
+La première colonne contient le code acte (exemple AB, CD, CR etc...)
+deuxième colonne c'est le libellé du code acte (que j'aimerais que tu comprennes bienà
+Troisième colonne : 
+Quand tu trouves : Flux sortant calcul PM , cela veut dire que cet acte est considéré comme un flux sortant et qu'il entre dans le calcul de la PM
+Quand tu trouves : FLux entrant calcul PM, cela veut dire que cet acte est considéré comme un flux entrant et qu'il entre en jeux dans le calcul de la PM
+quand tu trouves : Mnt versement + Flux entrant calcul PM : cela veut dire que cet acte intervient dans le calcul du versement + considéré comme flux entrant et entre en jeux dans le calcul de la PM
+Quand tu trouves : Mnt Rachat + Flux sortant Calcul PM , cela veut dire que cet acte est utilisé dans le calcul du Rachat + le calcul de la PM 
+
+etc....ainsi tu comprendras la suite logique
+NB --> Ne prends pas en compte les  actes dont les libellés sont "Annulation déjà pris en compte" et "Ne pas pas prendre en compte"
+
+Maintenant le problème est le suivant :
+sachant que dans notre jargon , on a des flux entrants et sortants( exemple Versements doivent être vus comme flux entrants, Rachats comme flux sortant)
+je pense que le fichier Excel que je t'ai donné contient des erreurs quant à la qualification des actes et aimerais que tu sois force de proposition en indentifiant les erreus .
+Ta méthodologie doit être la suivante :
+pour un code acte X : réexpliquer sa définition, à quoi il sert et expliquer par une petite démo logique (ou même mathématique ) pourquoi il doit être considéré comme sortant ou entrant  etc...
+et à la fin que tu produise un fichier au même format que je t'ai donné avec les corrections prises en compte
+Merci infinimment You are the best 
 
  
+
 
 
 
