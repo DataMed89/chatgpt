@@ -158,7 +158,49 @@ pour un code acte X : réexpliquer sa définition, à quoi il sert et expliquer 
 et à la fin que tu produise un fichier au même format que je t'ai donné avec les corrections prises en compte
 Merci infinimment You are the best 
 
+#######################################################
+
+3. Ligne 39 – Code SD – “Solde à une date”
+• Ancien : Flux entrant Calcul PM
+• Nouveau  (proposition) : Ne pas prendre en compte
+• Pourquoi : ce n’est pas un flux mais un stock / snapshot (valeur de PM à une date).
+• Exemple : “PM = 12 345€” n’est pas une transaction, donc ne doit pas entrer dans les sommes de flux.
+4. Ligne 40 – Code SE – “Sans effet”
+• Ancien : Flux sortant Calcul PM
+• Nouveau  (proposition) : Ne pas prendre en compte
+• Pourquoi : par définition, l’acte n’a pas d’impact financier (sinon il ne serait pas “sans effet”).
+
+5. Ligne 41 – Code SI – “Sinistre”
+• Ancien : Mnt Rachat + Flux sortant Calcul PM
+• Nouveau : Flux sortant Calcul PM (mais pas rachat)
+• Pourquoi : un sinistre (décès, etc.) est une prestation / règlement assuré-bénéficiaire, ce n’est pas un rachat.
+• Exemple : PM=15 000€, sinistre payé 10000€ ⇒ PM=5000 (sortant PM), mais indicateur “rachat” ne doit pas être alimenté.
+
+6. Ligne 43 – Code VE – “Virement de réserve en entrée”
+• Ancien : Mnt Versement + Flux entrant Calcul PM
+• Nouveau : Flux entrant Calcul PM (mais pas versement)
+• Pourquoi : c’est typiquement une reclasse interne (ex : réserve/PPB/PPE vers PM), pas un paiement client.
+• Exemple : PM=10 000€, “virement réserve” +200€ ⇒ PM=10 200€ sans versement client.
+
+7. Ligne 45 – Code VP – “Transfert de cotisations”
+• Ancien : Mnt Versement + Flux entrant Calcul PM
+• Nouveau (proposition) : Flux entrant Calcul PM (mais pas versement)
+• Pourquoi : un transfert est souvent une migration / transfert interne (contrat à contrat). Ce n’est pas du “new money”.
+• Exemple portefeuille : Contrat A -5 000€, Contrat B +5 000€ ⇒ net 0 au niveau client.
+
+8. Ligne 33 – Code RE – “Résiliation”
+• Ancien : Flux sortant Calcul PM
+• Nouveau (proposition) : Mnt Rachat + Flux sortant Calcul PM
+• Pourquoi : sur épargne, une résiliation aboutit généralement à une sortie de valeur (équivalent rachat total).
+• Exemple : PM=8 000€, résiliation avec paiement 8 000€ ⇒ PM=0 (et ça alimente “rachats”).
+
+9. Ligne 35 – Code RN – “Renonciation”
+• Ancien : Flux sortant Calcul PM
+• Nouveau (proposition) : Mnt Rachat + Flux sortant Calcul PM
+
+
  
+
 
 
 
